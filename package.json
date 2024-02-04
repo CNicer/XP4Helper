@@ -1,0 +1,118 @@
+{
+  "name": "xp4helper",
+  "displayName": "XP4Helper",
+  "description": "Auto check file to p4",
+  "version": "0.0.2",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "repository": {
+    "publisher": "yoloxu"
+  },
+  "publisher": "yoloxu",
+  "icon": "",
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "xp4helper.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "xp4helper.openfile",
+        "title": "open file"
+      },
+      {
+        "command": "xp4helper.refresh",
+        "title": "refresh",
+        "icon": {
+          "light": "resource/dark_refresh.svg",
+          "dark": "resource/white_refresh.png"
+        }
+      },
+      {
+        "command": "xp4helper.revert",
+        "title": "Revert Change"
+      }
+    ],
+    "configuration": {
+      "title": "XP4Helper",
+      "properties": {
+        "XP4Helper.P4PORT": {
+          "type": "string",
+          "description": "P4服务器地址xxx.xxx.xxx.xxx:1666"
+        },
+        "XP4Helper.P4USER": {
+          "type": "string",
+          "description": "P4用户名"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "checkfiles",
+          "title": "已Check文件",
+          "icon": "resource/title.svg"
+        }
+      ]
+    },
+    "views": {
+      "checkfiles": [
+        {
+          "id": "checkfiles",
+          "name": "checkfiles"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "xp4helper.refresh",
+          "when": "view == checkfiles",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "xp4helper.revert",
+          "when": "view == checkfiles"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/test-cli": "^0.0.4",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.56.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.6.3"
+  }
+}
