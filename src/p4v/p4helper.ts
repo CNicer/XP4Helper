@@ -263,7 +263,7 @@ export class p4helper {
         if(!this.is_active) return ""
         
         // todo 每次diff删除之前的temp文件
-        let tempfilepath = this.tempdirpath + '\\' + get_filename(path) + '#head'
+        let tempfilepath = this.tempdirpath + '\\' + "#head#" +  get_filename(path)
         const res = exec_cmd('p4 print -o ' + tempfilepath + ' ' + path + '#head')
         // let data = readFileSync(tempfilepath)
         // let utf8data = iconv.decode(data, 'gbk')

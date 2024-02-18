@@ -89,7 +89,7 @@ function treeItemCommand(p4helperins: p4helper.p4helper, filectler:filectl.filec
 			case filectl.eupdate_type.modify: {
 				const headFilePath = p4helperins.get_head(filepath)
 				if(headFilePath != "") {
-					vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(filepath), vscode.Uri.file(headFilePath))
+					vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(headFilePath), vscode.Uri.file(filepath))
 				}
 				else {
 					vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filepath))
