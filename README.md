@@ -48,9 +48,9 @@
 
 1. 可以查看p4已经check的文件（修改、删除、添加、重命名）
 2. 点击后根据文件修改类型做出相应展示
-3. 文件右击后可以选择revert修改
+3. 文件右击后可以选择revert修改<br>
 ![Alt text](https://gitee.com/XNICER/xp4-helper/raw/master/revert.png)
-4. 在文件浏览中标记已经修改的文件，方便快速找到文件
+4. 在文件浏览中标记已经修改的文件，方便快速找到文件<br>
 ![Alt text](https://gitee.com/XNICER/xp4-helper/raw/master/files.png)
 
 ## Extension Settings
@@ -63,6 +63,8 @@
 0.0.1 最基础的版本
 0.0.2 添加rename，修复部分已知问题
 0.0.3 优化部分逻辑
+0.0.4 修复P4获取用户名弹出txt
+0.0.5 Readme更新
 
 ### version
 
