@@ -86,7 +86,7 @@ export class p4helper {
             if(this.p4user == "") return;
         }
 
-        let test = process.env.P4PORT
+        //let test = process.env.P4PORT
 
         this.get_clients()
 
@@ -118,7 +118,7 @@ export class p4helper {
 
     get_user():string {
         let user = ""
-        const output = exec_cmd('p4 user')[0].toString().split('\n')
+        const output = exec_cmd('p4 user -o')[0].toString().split('\n')
         const lines = String(output).split('\n')
         for (let line in lines) {
             if (line.includes("User:")) {

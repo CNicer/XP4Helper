@@ -23,17 +23,17 @@
 
 ### 1. 文件修改后自动check到p4
 
-1.1 文件修改后自动check到p4
-1.2 点击后查看和p4仓库最新文件的diff
-1.3 对文件标记为黄色Modify状态
+1. 文件修改后自动check到p4
+2. 点击后查看和p4仓库最新文件的diff
+3. 对文件标记为黄色Modify状态
 ![Alt text](https://gitee.com/XNICER/xp4-helper/raw/master/modify.gif)
-1.4 文件无修改后自动取消check
+4. 文件无修改后自动取消check
 ![Alt text](https://gitee.com/XNICER/xp4-helper/raw/master/modify-revert.gif)
 
 ### 2. 文件删除后自动check到p4
 
-1.1 文件删除后自动check到p4
-1.2 点击后显示p4仓库最新文件
+1. 文件删除后自动check到p4
+2. 点击后显示p4仓库最新文件
 ![Alt text](https://gitee.com/XNICER/xp4-helper/raw/master/delete.gif)
 
 ### 3. 文件添加后自动check到p4
@@ -46,11 +46,11 @@
 
 ### 5. 插件侧边栏
 
-5.1 可以查看p4已经check的文件（修改、删除、添加、重命名）
-5.2 点击后根据文件修改类型做出相应展示
-5.3 文件右击后可以选择revert修改
+1. 可以查看p4已经check的文件（修改、删除、添加、重命名）
+2. 点击后根据文件修改类型做出相应展示
+3. 文件右击后可以选择revert修改
 ![Alt text](https://gitee.com/XNICER/xp4-helper/raw/master/revert.png)
-5.4 在文件浏览中标记已经修改的文件，方便快速找到文件
+4. 在文件浏览中标记已经修改的文件，方便快速找到文件
 ![Alt text](https://gitee.com/XNICER/xp4-helper/raw/master/files.png)
 
 ## Extension Settings
