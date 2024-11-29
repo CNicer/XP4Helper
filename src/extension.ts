@@ -63,19 +63,20 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(disposable, configurationChangeE, workspaceChangeE,);
 
 	const intervalId = setInterval(() => {
-		intervalRefresh(p4helperins, filectler, decorationProvider)
+		intervalRefresh(p4helperins, filectler, decorationProvider, treeDataProvider)
 	}, 6000)
 }
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
 
-function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider) {
+function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider, treeDataProvider:filetree) {
 	if (!p4helperins.is_active) return
 	let allFiles = filectler.add_batch_filenode(p4helperins.get_opened())
 	if (allFiles.length == 0) return
 	console.log("Has change")
 	decorationProvider.refresh(allFiles)
+	treeDataProvider.refresh()
 }
 
 function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.filectl) {
