@@ -6,6 +6,7 @@ import * as filectl from './filectl/filectl';
 import * as changeEvent from './event';
 import { DecorationsProvider } from './decorations'
 import { output_channel, xp4Log } from './output/output'
+import { Console } from 'console';
 
 // This method is called when your extension is activated
 // Called very first time
@@ -63,7 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const intervalId = setInterval(() => {
 		intervalRefresh(p4helperins, filectler, decorationProvider)
-	}, 5000)
+	}, 6000)
 }
 
 // This method is called when your extension is deactivated
@@ -72,6 +73,8 @@ export function deactivate() {}
 function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider) {
 	if (!p4helperins.is_active) return
 	let allFiles = filectler.add_batch_filenode(p4helperins.get_opened())
+	if (allFiles.length == 0) return
+	console.log("Has change")
 	decorationProvider.refresh(allFiles)
 }
 

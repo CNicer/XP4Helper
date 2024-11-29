@@ -112,33 +112,32 @@ export class filectl {
             this.path_type_old = this.path_type_A
             this.path_type_new = this.path_type_B
         }
+        
+        let changed_files: string[] = new Array
 
         file_infos.forEach((update_type, file) => {
             this.add_filenode(file, update_type)
+            if (!this.path_type_old.has(file) ||
+              (this.path_type_old.has(file) && this.path_type_old.get(file) != update_type)) {
+                changed_files.push(file)  
+            }
             this.path_type_new.set(file, update_type)
             this.path_type_old.delete(file)
         })
 
-        this.clear_old()
-
-        let all_files: string[] = new Array
-        this.path_type_new.forEach((_, file) => {
-            all_files.push(file)
-        })
-        this.path_type_old.forEach((_, file) => {
-            all_files.push(file)
-        })
+        this.clear_old(changed_files)
 
         let temp = this.path_type_new
         this.path_type_new = this.path_type_old
         this.path_type_old = temp
 
-        return all_files
+        return changed_files
     }
 
-    clear_old() {
+    clear_old(changed_files:string[]) {
         this.path_type_old.forEach((update_type, file) => {
             this.root.get(update_type)!.delete(file)
+            changed_files.push(file)
         })
     }
 
