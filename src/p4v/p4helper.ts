@@ -4,6 +4,7 @@ import * as filectl from '../filectl/filectl'
 import { open, readFileSync, writeFileSync } from 'fs'
 import * as iconv from 'iconv-lite'
 
+const output_channel = vscode.window.createOutputChannel('XP4Helper')
 
 /*
 * 在helper中所有路径用
@@ -80,10 +81,20 @@ export class p4helper {
         else{
             const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
             this.p4port = String(p4_configuration.get('P4PORT'))
-            if(this.p4port == "") return;
+            if (this.p4port == "") {
+                // console.log("p4 port is empty")
+                output_channel.appendLine("p4 port is empty")
+                output_channel.show()
+                return
+            };
             process.env.P4PORT = this.p4port
             this.p4user = String(p4_configuration.get('P4USER'))
-            if(this.p4user == "") return;
+            if (this.p4user == "") {
+                // console.log("P4 user is empty")
+                output_channel.appendLine("p4 user is empty")
+                output_channel.show()
+                return
+            };
         }
 
         //let test = process.env.P4PORT
@@ -105,12 +116,26 @@ export class p4helper {
             }
         }
 
-        if(this.p4client == "") return
+        if (this.p4client == "") {
+            // console.log("%s can't find match p4client", workspacepath)
+            output_channel.appendLine(workspacepath + " can't find match p4client")
+            output_channel.show()
+            return
+        }
 
         this.p4stream = this.get_stream()
-        if (this.p4stream == "") return
+        if (this.p4stream == "") {
+            // console.log("p4client=%s can't find stream", this.p4client)
+            output_channel.appendLine("Client=" + this.p4client + " can't find stream")
+            output_channel.show()
+            return
+        }
 
         this.is_active = true
+
+        // console.log("p4 is active")
+        output_channel.appendLine("p4 is active")
+        output_channel.show()
 
         // 从filectler中取出之前未处理的文件变更
 
@@ -207,14 +232,28 @@ export class p4helper {
         if(!this.is_active) return echeck_res_type.not_active
 
         path = disk_to_upper(path).replaceAll('\\', '/')
-        if(!this.isinstream_dir(get_pre_dir(path))) return echeck_res_type.not_in_stream
-        if(!this.isinstream_file(path)) return echeck_res_type.not_in_stream
+        if (!this.isinstream_dir(get_pre_dir(path))) {
+            // console.log("Path=%s file not in disk", path)
+            return echeck_res_type.not_in_stream
+        }
+        if (!this.isinstream_file(path)) {
+            // console.log("Path=%s file not in stream", path)
+            return echeck_res_type.not_in_stream
+        }
 
         let res = exec_cmd('p4 open ' + path)
-        if (!res[0].includes('opened for edit')) return echeck_res_type.check_conflict
+        if (!res[0].includes('opened for edit')) {
+            // console.log("Path=%s edit failed", path)
+            return echeck_res_type.check_conflict
+        }
         
         res = exec_cmd('p4 revert -a ' + path)
-        if (res[0].includes('reverted')) return echeck_res_type.nothing_change
+        if (res[0].includes('reverted')) {
+            // console.log("Path=%s nothing change", path)
+            return echeck_res_type.nothing_change
+        } 
+
+        // console.log("Path=%s check success", path)
 
         return echeck_res_type.success
     }
