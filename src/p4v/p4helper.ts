@@ -71,28 +71,45 @@ export class p4helper {
     init_p4_env():void {
         process.env.P4CHARSET = 'utf8'
 
-        const env_p4port = process.env.P4PORT
-        if (env_p4port) {
-            this.p4port = env_p4port
-            process.env.P4PORT = this.p4port
-            this.p4user = this.get_user()
-        }
-        else{
-            const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
-            this.p4port = String(p4_configuration.get('P4PORT'))
-            if (this.p4port == "") {
-                // console.log("p4 port is empty")
-                xp4Log("p4 port is empty")
-                return
-            };
-            process.env.P4PORT = this.p4port
-            this.p4user = String(p4_configuration.get('P4USER'))
-            if (this.p4user == "") {
-                // console.log("P4 user is empty")
-                xp4Log("p4 user is empty")
-                return
-            };
-        }
+        // const env_p4port = process.env.P4PORT
+        // const env_p4user = process.env.P4USER
+        // if (env_p4port && env_p4user) {
+        //     this.p4port = env_p4port
+        //     process.env.P4PORT = this.p4port
+        //     this.p4user = this.get_user()
+        //     process.env.P4USER = this.p4user
+        // }
+        // else{
+        //     const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
+        //     this.p4port = String(p4_configuration.get('P4PORT'))
+        //     if (this.p4port == "") {
+        //         // console.log("p4 port is empty")
+        //         xp4Log("p4 port is empty")
+        //         return
+        //     };
+        //     process.env.P4PORT = this.p4port
+        //     this.p4user = String(p4_configuration.get('P4USER'))
+        //     if (this.p4user == "") {
+        //         // console.log("P4 user is empty")
+        //         xp4Log("p4 user is empty")
+        //         return
+        //     };
+        // }
+        const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
+        this.p4port = String(p4_configuration.get('P4PORT'))
+        if (this.p4port == "") {
+            // console.log("p4 port is empty")
+            xp4Log("p4 port is empty")
+            return
+        };
+        process.env.P4PORT = this.p4port
+        this.p4user = String(p4_configuration.get('P4USER'))
+        if (this.p4user == "") {
+            // console.log("P4 user is empty")
+            xp4Log("p4 user is empty")
+            return
+        };
+        process.env.P4USER = this.p4user
 
         //let test = process.env.P4PORT
 

@@ -13,7 +13,7 @@ import { Console } from 'console';
 export function activate(context: vscode.ExtensionContext) {
 	
 	// console.log('Congratulations, your extension "xp4helper" is now active!');
-	xp4Log('Congratulations, your extension "xp4helper" is now active!')
+	xp4Log('XP4Helper from XuYao! Make it again and again!!!')
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
