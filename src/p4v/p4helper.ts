@@ -234,26 +234,36 @@ export class p4helper {
         path = disk_to_upper(path).replaceAll('\\', '/')
         if (!this.isinstream_dir(get_pre_dir(path))) {
             // console.log("Path=%s file not in disk", path)
+            output_channel.append("Path=" + path + " file not in disk")
+            output_channel.show()
             return echeck_res_type.not_in_stream
         }
         if (!this.isinstream_file(path)) {
             // console.log("Path=%s file not in stream", path)
+            output_channel.append("Path=" + path + " file not in stream")
+            output_channel.show()
             return echeck_res_type.not_in_stream
         }
 
         let res = exec_cmd('p4 open ' + path)
         if (!res[0].includes('opened for edit')) {
             // console.log("Path=%s edit failed", path)
+            output_channel.append("Path=" + path + " edit failed")
+            output_channel.show()
             return echeck_res_type.check_conflict
         }
         
         res = exec_cmd('p4 revert -a ' + path)
         if (res[0].includes('reverted')) {
             // console.log("Path=%s nothing change", path)
+            output_channel.append("Path=" + path + " nothing change")
+            output_channel.show()
             return echeck_res_type.nothing_change
         } 
 
         // console.log("Path=%s check success", path)
+        output_channel.append("Path=" + path + " check success")
+        output_channel.show()
 
         return echeck_res_type.success
     }
