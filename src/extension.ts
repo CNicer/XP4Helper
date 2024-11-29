@@ -5,14 +5,15 @@ import {filetree} from './tree_view/mytreeview';
 import * as filectl from './filectl/filectl';
 import * as changeEvent from './event';
 import { DecorationsProvider } from './decorations'
-import { open } from 'fs';
-import path from 'path';
+import { output_channel } from './output/output'
 
 // This method is called when your extension is activated
 // Called very first time
 export function activate(context: vscode.ExtensionContext) {
 	
-	console.log('Congratulations, your extension "xp4helper" is now active!');
+	// console.log('Congratulations, your extension "xp4helper" is now active!');
+	output_channel.append('Congratulations, your extension "xp4helper" is now active!')
+	output_channel.show()
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
@@ -40,7 +41,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.registerFileDecorationProvider(decorationProvider)
 	)
-	
+
 	// regist commands
 	context.subscriptions.concat(treeItemCommand(p4helperins, filectler, treeDataProvider, decorationProvider))
 

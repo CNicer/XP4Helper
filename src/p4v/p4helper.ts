@@ -3,8 +3,7 @@ import {exec, spawnSync} from 'child_process'
 import * as filectl from '../filectl/filectl'
 import { open, readFileSync, writeFileSync } from 'fs'
 import * as iconv from 'iconv-lite'
-
-const output_channel = vscode.window.createOutputChannel('XP4Helper')
+import { output_channel } from '../output/output'
 
 /*
 * 在helper中所有路径用
@@ -102,7 +101,12 @@ export class p4helper {
         this.get_clients()
 
         const workspacefolders =vscode.workspace.workspaceFolders
-        if(!workspacefolders || workspacefolders.length == 0) return;
+        if (!workspacefolders || workspacefolders.length == 0) {
+            output_channel.append("Workspace folders get failed")
+            output_channel.show()
+            return;
+        }
+            
         let workspacepath = workspacefolders[0].uri.path
         workspacepath.replaceAll('\\', '/')
         if (workspacepath[0] == '/') workspacepath = workspacepath.substring(1)
