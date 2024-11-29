@@ -6,10 +6,13 @@ export class DecorationsProvider implements vscode.FileDecorationProvider {
     protected _onDidChangeFileDecorations = new vscode.EventEmitter<vscode.Uri[]>();
     readonly onDidChangeFileDecorations = this._onDidChangeFileDecorations.event;
 
-    filectler:filectl
+    filectler: filectl
+    
+    markedUris: vscode.Uri[]
 
     constructor(filectler:filectl) {
         this.filectler = filectler
+        this.markedUris = new Array
     }
 
     provideFileDecoration(uri: vscode.Uri): vscode.ProviderResult<vscode.FileDecoration> {
@@ -20,9 +23,9 @@ export class DecorationsProvider implements vscode.FileDecorationProvider {
         let colors:string
         let status:string
         switch(node.update_type) {
-            case eupdate_type.add: badges = "A"; colors = "terminal.ansiGreen"; status = "Add"; break;
-            case eupdate_type.delete: badges = "D"; colors = "terminal.ansiRed"; status = "Delete"; break;
-            case eupdate_type.modify: badges = "M"; colors = "terminal.ansiYellow"; status = "Modify"; break;
+            case eupdate_type.add: badges = "A"; colors = "terminal.ansiGreen"; status = "Add"; this.markedUris.push(uri);  break;
+            case eupdate_type.delete: badges = "D"; colors = "terminal.ansiRed"; status = "Delete"; this.markedUris.push(uri); break;
+            case eupdate_type.modify: badges = "M"; colors = "terminal.ansiYellow"; status = "Modify"; this.markedUris.push(uri); break;
             default: return
         }
         return {
@@ -39,5 +42,9 @@ export class DecorationsProvider implements vscode.FileDecorationProvider {
             uris.push(vscode.Uri.file(path))
         }
         this._onDidChangeFileDecorations.fire(uris)
+    }
+
+    autoRefresh() {
+        this._onDidChangeFileDecorations.fire(this.markedUris)
     }
 }

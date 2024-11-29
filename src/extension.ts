@@ -61,6 +61,10 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.concat(fileChangeEvent(p4helperins, filectler, treeDataProvider, decorationProvider))
 	
 	context.subscriptions.push(disposable, configurationChangeE, workspaceChangeE,);
+
+	const intervalId = setInterval(() => {
+		decorationProvider.autoRefresh()
+	}, 5000)
 }
 
 // This method is called when your extension is deactivated
