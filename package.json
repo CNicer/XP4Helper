@@ -2,7 +2,7 @@
   "name": "xp4helper",
   "displayName": "XP4Helper",
   "description": "Auto check file to p4",
-  "version": "0.0.8",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.85.0"
   },
