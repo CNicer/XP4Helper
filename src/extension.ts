@@ -5,15 +5,14 @@ import {filetree} from './tree_view/mytreeview';
 import * as filectl from './filectl/filectl';
 import * as changeEvent from './event';
 import { DecorationsProvider } from './decorations'
-import { output_channel } from './output/output'
+import { output_channel, xp4Log } from './output/output'
 
 // This method is called when your extension is activated
 // Called very first time
 export function activate(context: vscode.ExtensionContext) {
 	
 	// console.log('Congratulations, your extension "xp4helper" is now active!');
-	output_channel.append('Congratulations, your extension "xp4helper" is now active!')
-	output_channel.show()
+	xp4Log('Congratulations, your extension "xp4helper" is now active!')
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
@@ -63,18 +62,25 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(disposable, configurationChangeE, workspaceChangeE,);
 
 	const intervalId = setInterval(() => {
-		decorationProvider.autoRefresh()
+		intervalRefresh(p4helperins, filectler, decorationProvider)
 	}, 5000)
 }
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
 
+function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider) {
+	if (!p4helperins.is_active) return
+	let allFiles = filectler.add_batch_filenode(p4helperins.get_opened())
+	decorationProvider.refresh(allFiles)
+}
+
 function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.filectl) {
 	if (!p4helperins.is_active) return
-	for(let [file, update_type] of p4helperins.get_opened()) {
-		filectler.add_filenode(file, update_type)
-	}
+	filectler.add_batch_filenode(p4helperins.get_opened())
+	// for(let [file, update_type] of p4helperins.get_opened()) {
+	// 	filectler.add_filenode(file, update_type)
+	// }
 }
 
 const validFileType:Set<string> = new Set(["sh", "lua", "c", "cpp", "h", "hpp", "json", "ym", "yaml", "py", "proto", "html"])

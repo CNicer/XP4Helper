@@ -3,7 +3,7 @@ import {exec, spawnSync} from 'child_process'
 import * as filectl from '../filectl/filectl'
 import { open, readFileSync, writeFileSync } from 'fs'
 import * as iconv from 'iconv-lite'
-import { output_channel } from '../output/output'
+import { output_channel, xp4Log } from '../output/output'
 
 /*
 * 在helper中所有路径用
@@ -82,16 +82,14 @@ export class p4helper {
             this.p4port = String(p4_configuration.get('P4PORT'))
             if (this.p4port == "") {
                 // console.log("p4 port is empty")
-                output_channel.appendLine("p4 port is empty")
-                output_channel.show()
+                xp4Log("p4 port is empty")
                 return
             };
             process.env.P4PORT = this.p4port
             this.p4user = String(p4_configuration.get('P4USER'))
             if (this.p4user == "") {
                 // console.log("P4 user is empty")
-                output_channel.appendLine("p4 user is empty")
-                output_channel.show()
+                xp4Log("p4 user is empty")
                 return
             };
         }
@@ -102,8 +100,7 @@ export class p4helper {
 
         const workspacefolders =vscode.workspace.workspaceFolders
         if (!workspacefolders || workspacefolders.length == 0) {
-            output_channel.append("Workspace folders get failed")
-            output_channel.show()
+            xp4Log("Workspace folders get failed")
             return;
         }
             
@@ -122,24 +119,21 @@ export class p4helper {
 
         if (this.p4client == "") {
             // console.log("%s can't find match p4client", workspacepath)
-            output_channel.appendLine(workspacepath + " can't find match p4client")
-            output_channel.show()
+            xp4Log(workspacepath + " can't find match p4client")
             return
         }
 
         this.p4stream = this.get_stream()
         if (this.p4stream == "") {
             // console.log("p4client=%s can't find stream", this.p4client)
-            output_channel.appendLine("Client=" + this.p4client + " can't find stream")
-            output_channel.show()
+            xp4Log("Client=" + this.p4client + " can't find stream")
             return
         }
 
         this.is_active = true
 
         // console.log("p4 is active")
-        output_channel.appendLine("p4 is active")
-        output_channel.show()
+        xp4Log("p4 is active")
 
         // 从filectler中取出之前未处理的文件变更
 
@@ -238,36 +232,31 @@ export class p4helper {
         path = disk_to_upper(path).replaceAll('\\', '/')
         if (!this.isinstream_dir(get_pre_dir(path))) {
             // console.log("Path=%s file not in disk", path)
-            output_channel.append("Path=" + path + " file not in disk")
-            output_channel.show()
+            xp4Log("Path=" + path + " file not in disk")
             return echeck_res_type.not_in_stream
         }
         if (!this.isinstream_file(path)) {
             // console.log("Path=%s file not in stream", path)
-            output_channel.append("Path=" + path + " file not in stream")
-            output_channel.show()
+            xp4Log("Path=" + path + " file not in stream")
             return echeck_res_type.not_in_stream
         }
 
         let res = exec_cmd('p4 open ' + path)
         if (!res[0].includes('opened for edit')) {
             // console.log("Path=%s edit failed", path)
-            output_channel.append("Path=" + path + " edit failed")
-            output_channel.show()
+            xp4Log("Path=" + path + " edit failed")
             return echeck_res_type.check_conflict
         }
         
         res = exec_cmd('p4 revert -a ' + path)
         if (res[0].includes('reverted')) {
             // console.log("Path=%s nothing change", path)
-            output_channel.append("Path=" + path + " nothing change")
-            output_channel.show()
+            xp4Log("Path=" + path + " nothing change")
             return echeck_res_type.nothing_change
         } 
 
         // console.log("Path=%s check success", path)
-        output_channel.append("Path=" + path + " check success")
-        output_channel.show()
+        // xp4Log("Path=" + path + " check success")
 
         return echeck_res_type.success
     }

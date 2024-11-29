@@ -63,6 +63,11 @@ export class filectl {
         [eupdate_type.rename, new Map<string, filenode>()]
     ])
 
+    private path_type_A: Map<string, eupdate_type> = new Map
+    private path_type_B: Map<string, eupdate_type> = new Map
+    private path_type_old = this.path_type_A
+    private path_type_new = this.path_type_B
+
     get_all(): filenode[] {
         return [...this.root.get(eupdate_type.modify)!.values(),
              ...this.root.get(eupdate_type.add)!.values(),
@@ -84,6 +89,7 @@ export class filectl {
         this.root.forEach((value, key)=>{
             if (key != update_type && value.has(path)) {
                 newnode = value.get(path)!
+                value.delete(path)
             }
         })
 
@@ -95,6 +101,45 @@ export class filectl {
         }
         
         this.root.get(update_type)!.set(path, newnode)
+        this.path_type_old.set(path, update_type)
+    }
+
+    add_batch_filenode(file_infos: Map<string, eupdate_type>):string[] {
+        if(this.path_type_A.size == 0) {
+            this.path_type_old = this.path_type_B
+            this.path_type_new = this.path_type_A
+        } else {
+            this.path_type_old = this.path_type_A
+            this.path_type_new = this.path_type_B
+        }
+
+        file_infos.forEach((update_type, file) => {
+            this.add_filenode(file, update_type)
+            this.path_type_new.set(file, update_type)
+            this.path_type_old.delete(file)
+        })
+
+        this.clear_old()
+
+        let all_files: string[] = new Array
+        this.path_type_new.forEach((_, file) => {
+            all_files.push(file)
+        })
+        this.path_type_old.forEach((_, file) => {
+            all_files.push(file)
+        })
+
+        let temp = this.path_type_new
+        this.path_type_new = this.path_type_old
+        this.path_type_old = temp
+
+        return all_files
+    }
+
+    clear_old() {
+        this.path_type_old.forEach((update_type, file) => {
+            this.root.get(update_type)!.delete(file)
+        })
     }
 
     get_filenod(path:string):filenode|undefined {
