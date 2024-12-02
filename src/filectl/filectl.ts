@@ -139,6 +139,7 @@ export class filectl {
             this.root.get(update_type)!.delete(file)
             changed_files.push(file)
         })
+        this.path_type_old.clear()
     }
 
     get_filenod(path:string):filenode|undefined {
