@@ -116,10 +116,9 @@ export class filectl {
         let changed_files: string[] = new Array
 
         file_infos.forEach((update_type, file) => {
-            this.add_filenode(file, update_type)
-            if (!this.path_type_old.has(file) ||
-              (this.path_type_old.has(file) && this.path_type_old.get(file) != update_type)) {
-                changed_files.push(file)  
+            if (!this.path_type_old.has(file) || this.path_type_old.get(file) != update_type) {
+                changed_files.push(file)
+                this.add_filenode(file, update_type)
             }
             this.path_type_new.set(file, update_type)
             this.path_type_old.delete(file)

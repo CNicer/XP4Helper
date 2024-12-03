@@ -64,7 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const intervalId = setInterval(() => {
 		intervalRefresh(p4helperins, filectler, decorationProvider, treeDataProvider)
-	}, 6000)
+	}, 5000)
 }
 
 // This method is called when your extension is deactivated
