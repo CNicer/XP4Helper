@@ -180,7 +180,7 @@ export class p4helper {
     get_clients():void {
         const res = exec_cmd('p4 clients -u ' + this.p4user)
         if (res[1] != "") {
-            xp4LogError("Get clients failed")
+            xp4LogError("Get clients failed res=%s", res)
             return
         };
         // const output = execSync('p4 clients -u ' + this.p4user).toString()
