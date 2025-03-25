@@ -1,18 +1,21 @@
 import { eupdate_type, filectl, filenode } from "./filectl/filectl";
 import { p4helper, echeck_res_type } from "./p4v/p4helper";
+import { xp4LogDebug } from "./output/output";
 import * as fs from 'fs'
 
 function on_old_modify(old_filenode:filenode, p4helperins:p4helper, filectler:filectl):boolean {
     const filepath = old_filenode.filepath
     switch(old_filenode.update_type) {
         case eupdate_type.modify: {
-            if(p4helperins.try_revert(filepath)) {
+            if (p4helperins.try_revert(filepath)) {
+                xp4LogDebug("file revert")
                 filectler.del_filenode(filepath, old_filenode.update_type)
                 return true
             }
         }break;
         case eupdate_type.add: {
             // nothing todo
+            xp4LogDebug("Add to modify nothing todo")
         }break;
         case eupdate_type.delete: {
             const temp_path = filepath + Math.random()
@@ -104,7 +107,8 @@ function p4action(check_res:echeck_res_type, filectler:filectl, path:string, upd
 }
 
 export function on_modify(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, path:string):boolean {
-    if(old_filenode !== undefined) {
+    if (old_filenode !== undefined) {
+        xp4LogDebug("OldFilenode exists %s", path)
         return on_old_modify(old_filenode, p4helperins, filectler)
     }
 

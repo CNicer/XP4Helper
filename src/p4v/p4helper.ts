@@ -3,7 +3,7 @@ import {exec, spawnSync} from 'child_process'
 import * as filectl from '../filectl/filectl'
 import { open, readFileSync, writeFileSync } from 'fs'
 import * as iconv from 'iconv-lite'
-import { output_channel, xp4Log } from '../output/output'
+import { output_channel, xp4LogDebug, xp4LogError, xp4LogInfo, xp4LogWarn } from '../output/output'
 
 /*
 * 在helper中所有路径用
@@ -99,14 +99,14 @@ export class p4helper {
         this.p4port = String(p4_configuration.get('P4PORT'))
         if (this.p4port == "") {
             // console.log("p4 port is empty")
-            xp4Log("p4 port is empty")
+            xp4LogError("p4 port is empty")
             return
         };
         process.env.P4PORT = this.p4port
         this.p4user = String(p4_configuration.get('P4USER'))
         if (this.p4user == "") {
             // console.log("P4 user is empty")
-            xp4Log("p4 user is empty")
+            xp4LogError("p4 user is empty")
             return
         };
         process.env.P4USER = this.p4user
@@ -117,7 +117,7 @@ export class p4helper {
 
         const workspacefolders =vscode.workspace.workspaceFolders
         if (!workspacefolders || workspacefolders.length == 0) {
-            xp4Log("Workspace folders get failed")
+            xp4LogError("Workspace folders get failed")
             return;
         }
             
@@ -136,21 +136,21 @@ export class p4helper {
 
         if (this.p4client == "") {
             // console.log("%s can't find match p4client", workspacepath)
-            xp4Log(workspacepath + " can't find match p4client")
+            xp4LogError(workspacepath + " can't find match p4client")
             return
         }
 
         this.p4stream = this.get_stream()
         if (this.p4stream == "") {
             // console.log("p4client=%s can't find stream", this.p4client)
-            xp4Log("Client=" + this.p4client + " can't find stream")
+            xp4LogError("Client=" + this.p4client + " can't find stream")
             return
         }
 
         this.is_active = true
 
         // console.log("p4 is active")
-        xp4Log("p4 is active")
+        xp4LogInfo("p4 is active")
 
         // 从filectler中取出之前未处理的文件变更
 
@@ -180,7 +180,7 @@ export class p4helper {
     get_clients():void {
         const res = exec_cmd('p4 clients -u ' + this.p4user)
         if (res[1] != "") {
-            xp4Log("Get clients failed")
+            xp4LogError("Get clients failed")
             return
         };
         // const output = execSync('p4 clients -u ' + this.p4user).toString()
@@ -252,31 +252,31 @@ export class p4helper {
         path = disk_to_upper(path).replaceAll('\\', '/')
         if (!this.isinstream_dir(get_pre_dir(path))) {
             // console.log("Path=%s file not in disk", path)
-            // xp4Log("Path=" + path + " file not in disk")
+            xp4LogDebug("Path=%s file not in dist", path)
             return echeck_res_type.not_in_stream
         }
         if (!this.isinstream_file(path)) {
             // console.log("Path=%s file not in stream", path)
-            // xp4Log("Path=" + path + " file not in stream")
+            xp4LogDebug("Path=%s file not in stream", path)
             return echeck_res_type.not_in_stream
         }
 
         let res = exec_cmd('p4 open ' + path)
         if (!res[0].includes('opened for edit')) {
             // console.log("Path=%s edit failed", path)
-            // xp4Log("Path=" + path + " edit failed")
+            xp4LogDebug("Path=%s edit failed res=%s", path, res[0])
             return echeck_res_type.check_conflict
         }
         
         res = exec_cmd('p4 revert -a ' + path)
         if (res[0].includes('reverted')) {
             // console.log("Path=%s nothing change", path)
-            // xp4Log("Path=" + path + " nothing change")
+            xp4LogDebug("Path=%s nothing change", path)
             return echeck_res_type.nothing_change
         } 
 
         // console.log("Path=%s check success", path)
-        // xp4Log("Path=" + path + " check success")
+        xp4LogDebug("Path=%s check success", path)
 
         return echeck_res_type.success
     }

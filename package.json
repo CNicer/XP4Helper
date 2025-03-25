@@ -51,6 +51,11 @@
         "XP4Helper.P4USER": {
           "type": "string",
           "description": "P4用户名"
+        },
+        "XP4Helper.LogLevel": {
+          "type": "string",
+          "description": "插件日志Level",
+          "default": "INFO"
         }
       }
     },
@@ -101,6 +106,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.6",
     "@types/node": "18.x",
+    "@types/sprintf-js": "^1.1.4",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
@@ -113,6 +119,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "iconv-lite": "^0.6.3"
+    "iconv-lite": "^0.6.3",
+    "sprintf-js": "^1.1.3"
   }
 }

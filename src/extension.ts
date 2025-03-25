@@ -5,7 +5,7 @@ import {filetree} from './tree_view/mytreeview';
 import * as filectl from './filectl/filectl';
 import * as changeEvent from './event';
 import { DecorationsProvider } from './decorations'
-import { output_channel, xp4Log } from './output/output'
+import { xp4LogDebug, setLogLevel, xp4Log } from './output/output'
 import { Console } from 'console';
 
 // This method is called when your extension is activated
@@ -51,6 +51,10 @@ export function activate(context: vscode.ExtensionContext) {
 			|| event.affectsConfiguration('XP4Helper.P4USER')) {
 			vscode.window.showInformationMessage('p4 configuration is changed')
 			p4helperins.init_p4_env()
+		} else if (event.affectsConfiguration("XP4Helper.LogLevel")) {
+			const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
+			let log_level = String(p4_configuration.get('LogLevel'))
+			setLogLevel(log_level)
 		}
 	})
 
@@ -162,12 +166,14 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 	})
 	let fileModifyE = vscode.workspace.onDidSaveTextDocument((event)=>{
 		const fspath = event.uri.fsPath
+		xp4LogDebug("ModifyE %s", fspath)
 		if(!checkFileValid(fspath)) return
 		const path = p4helper.disk_to_upper(fspath).replaceAll('/', '\\')
 		let oldFileNode = filectler.get_filenod(path)
 		if(changeEvent.on_modify(oldFileNode, p4helperins, filectler, path)) {
 			treeDataProvider.refresh()
 			decorationProvider.refresh([path])
+			xp4LogDebug("OnModify success %s", fspath)
 		}
 	})
 	let fileAddE = vscode.workspace.onDidCreateFiles((event)=>{
@@ -175,6 +181,7 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 		let pathList:string[] = new Array()
 		for(let file of event.files) {
 			const fspath = file.fsPath
+			xp4LogDebug("AddE %s", fspath)
 			if(!checkFileValid(fspath)) continue
 			const path = p4helper.disk_to_upper(fspath).replaceAll('/', '\\')
 			let oldFileNode = filectler.get_filenod(path)
