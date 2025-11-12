@@ -6,7 +6,21 @@ import * as filectl from './filectl/filectl';
 import * as changeEvent from './event';
 import { DecorationsProvider } from './decorations'
 import { xp4LogDebug, setLogLevel, xp4Log } from './output/output'
-import { Console } from 'console';
+import { showCommitInfoInline } from './linectl/line';
+
+const validFileType:Set<string> = new Set(["sh", "lua", "c", "cpp", "h", "hpp", "json", "ym", "yaml", "py", "proto", "html", "xml", "js"])
+
+function checkFileValid(path:string):boolean {
+	return validFileType.has(p4helper.get_postfix(path))
+}
+
+let lastLineNumber = 0
+
+function updateLogLevel() {
+	const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
+	let log_level = String(p4_configuration.get('LogLevel'))
+	setLogLevel(log_level)
+}
 
 // This method is called when your extension is activated
 // Called very first time
@@ -52,9 +66,7 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.window.showInformationMessage('p4 configuration is changed')
 			p4helperins.init_p4_env()
 		} else if (event.affectsConfiguration("XP4Helper.LogLevel")) {
-			const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
-			let log_level = String(p4_configuration.get('LogLevel'))
-			setLogLevel(log_level)
+			updateLogLevel()
 		}
 	})
 
@@ -62,9 +74,27 @@ export function activate(context: vscode.ExtensionContext) {
 		p4helperins.init_p4_env()
 	})
 
+	// vscode.window.onDidChangeTextEditorSelection(async (e) => {
+	// 	const editor = e.textEditor;
+    //     const lineNumber = editor.selection.active.line;
+	// 	const filePath = editor.document.uri.fsPath;
+
+	// 	let start = Date.now()
+
+	// 	if (lineNumber == lastLineNumber) return;
+	// 	if (!checkFileValid(filePath)) return;
+		
+	// 	showCommitInfoInline(p4helperins, editor, lineNumber, filePath)
+	// 	lastLineNumber = lineNumber
+
+	// 	xp4LogDebug("Total cost=%dms", Date.now() - start)
+	// })
+
 	context.subscriptions.concat(fileChangeEvent(p4helperins, filectler, treeDataProvider, decorationProvider))
 	
 	context.subscriptions.push(disposable, configurationChangeE, workspaceChangeE,);
+
+	updateLogLevel()
 
 	const intervalId = setInterval(() => {
 		intervalRefresh(p4helperins, filectler, decorationProvider, treeDataProvider)
@@ -89,12 +119,6 @@ function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.filectl)
 	// for(let [file, update_type] of p4helperins.get_opened()) {
 	// 	filectler.add_filenode(file, update_type)
 	// }
-}
-
-const validFileType:Set<string> = new Set(["sh", "lua", "c", "cpp", "h", "hpp", "json", "ym", "yaml", "py", "proto", "html"])
-
-function checkFileValid(path:string):boolean {
-	return validFileType.has(p4helper.get_postfix(path))
 }
 
 function treeItemCommand(p4helperins: p4helper.p4helper, filectler:filectl.filectl, treeDataProvider:filetree, decorationProvider:DecorationsProvider):vscode.Disposable[] {

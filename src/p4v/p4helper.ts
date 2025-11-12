@@ -1,9 +1,11 @@
 import * as vscode from 'vscode'
 import {exec, spawnSync} from 'child_process'
 import * as filectl from '../filectl/filectl'
-import { open, readFileSync, writeFileSync } from 'fs'
-import * as iconv from 'iconv-lite'
-import { output_channel, xp4LogDebug, xp4LogError, xp4LogInfo, xp4LogWarn } from '../output/output'
+import { xp4LogDebug, xp4LogError, xp4LogInfo, xp4LogWarn } from '../output/output'
+
+// @ts-ignore
+import * as P4 from 'p4js';
+
 
 /*
 * 在helper中所有路径用
@@ -154,6 +156,11 @@ export class p4helper {
 
         // 从filectler中取出之前未处理的文件变更
 
+    }
+
+    init_p4_env2(): void {
+        process.env.P4CHARSET = 'utf8'
+        const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
     }
 
     get_user():string {
@@ -369,5 +376,23 @@ export class p4helper {
 
     force_revert(path:string) {
         exec_cmd('p4 revert ' + path)
+    }
+
+    get_commit_author(path: string, linenumber: number): Promise<{author:string, date: string}> {
+        return new Promise((resolve, reject) => {
+            if (!this.is_active) resolve({author: '', date: ''});
+            let author = '';
+            let date = '';
+            let start = Date.now()
+            const res = exec_cmd(`p4 changes -m 1 ${path}#${linenumber}`)
+            xp4LogDebug("Get author cost=%dms", Date.now() - start)
+            if (res == undefined || res.length == 0) resolve({ author, date })
+            const infoline = res[0]
+            const parts = infoline.split(' ')
+            if(parts.length < 6) resolve({author, date})
+            author = parts[5]
+            date = parts[3]
+            resolve({ author, date })
+        })
     }
 }
