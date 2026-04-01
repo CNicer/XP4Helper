@@ -8,26 +8,31 @@ export class DecorationsProvider implements vscode.FileDecorationProvider {
 
     filectler: filectl
     
-    markedUris: vscode.Uri[]
+    // Use a Set to prevent duplicate URIs and unbounded growth
+    private markedUriSet: Set<string> = new Set()
 
     constructor(filectler:filectl) {
         this.filectler = filectler
-        this.markedUris = new Array
     }
 
     provideFileDecoration(uri: vscode.Uri): vscode.ProviderResult<vscode.FileDecoration> {
         const filepath = disk_to_upper(uri.fsPath).replaceAll('/', '\\')
         const node =this.filectler.get_filenod(filepath)
-        if (node === undefined) return
+        if (node === undefined) {
+            // Remove from tracked set if file is no longer tracked
+            this.markedUriSet.delete(uri.toString())
+            return
+        }
         let badges:string
         let colors:string
         let status:string
         switch(node.update_type) {
-            case eupdate_type.add: badges = "A"; colors = "terminal.ansiGreen"; status = "Add"; this.markedUris.push(uri);  break;
-            case eupdate_type.delete: badges = "D"; colors = "terminal.ansiRed"; status = "Delete"; this.markedUris.push(uri); break;
-            case eupdate_type.modify: badges = "M"; colors = "terminal.ansiYellow"; status = "Modify"; this.markedUris.push(uri); break;
+            case eupdate_type.add: badges = "A"; colors = "terminal.ansiGreen"; status = "Add"; break;
+            case eupdate_type.delete: badges = "D"; colors = "terminal.ansiRed"; status = "Delete"; break;
+            case eupdate_type.modify: badges = "M"; colors = "terminal.ansiYellow"; status = "Modify"; break;
             default: return
         }
+        this.markedUriSet.add(uri.toString())
         return {
             badge: badges,
             tooltip: status,
@@ -45,6 +50,7 @@ export class DecorationsProvider implements vscode.FileDecorationProvider {
     }
 
     autoRefresh() {
-        this._onDidChangeFileDecorations.fire(this.markedUris)
+        const uris = Array.from(this.markedUriSet).map(s => vscode.Uri.parse(s))
+        this._onDidChangeFileDecorations.fire(uris)
     }
 }

@@ -2,7 +2,7 @@
   "name": "xp4helper",
   "displayName": "XP4Helper",
   "description": "Auto check file to p4",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -56,6 +56,11 @@
           "type": "string",
           "description": "插件日志Level",
           "default": "INFO"
+        },
+        "XP4Helper.ShowLineBlame": {
+          "type": "boolean",
+          "description": "在光标所在行末尾显示上一次提交人和日期(类似Git Blame)",
+          "default": false
         }
       }
     },

@@ -8,24 +8,44 @@ export enum eupdate_type {
     unkonwn
 }
 
+// Represents a changelist node in the tree view
+export class changelistNode extends vscode.TreeItem {
+    changelist: string
+    children: filenode[] = new Array()
+
+    constructor(changelist: string, clDescription: string = '') {
+        const displayName = changelist === 'default' ? 'default' : `Change ${changelist}`
+        super(displayName, vscode.TreeItemCollapsibleState.Expanded)
+        this.changelist = changelist
+        this.contextValue = 'changelist'
+        this.iconPath = new vscode.ThemeIcon('list-tree')
+        if (clDescription) {
+            this.tooltip = clDescription
+        }
+    }
+}
+
 export class filenode extends vscode.TreeItem{
     filename: string = ""
     filepath: string = ""
     oldpath: string = ""
     update_type: eupdate_type = eupdate_type.unkonwn
+    changelist: string = "default"
     children: filenode[] = new Array()
 
     constructor(
         public readonly label: string,
         public readonly path: string,
         update_type: eupdate_type,
-        public readonly collapsibleState: vscode.TreeItemCollapsibleState
+        public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+        changelist: string = "default"
     ) {
         const uri = vscode.Uri.file(path)
         super(uri, collapsibleState)
         this.filename = label
         this.filepath = path
         this.update_type = update_type
+        this.changelist = changelist
 
         this.command = {
             title: '',
@@ -53,6 +73,12 @@ export class filenode extends vscode.TreeItem{
     }
 }
 
+// Info structure for opened file
+export interface OpenedFileInfo {
+    update_type: eupdate_type
+    changelist: string
+}
+
 type NMap = Map<string, filenode>
 
 export class filectl {
@@ -68,6 +94,42 @@ export class filectl {
     private path_type_old = this.path_type_A
     private path_type_new = this.path_type_B
 
+    // Get all changelist nodes with their children for tree view
+    get_all_changelists(descriptions: Map<string, string> = new Map()): changelistNode[] {
+        const clMap = new Map<string, changelistNode>()
+        
+        for (const [_type, nmap] of this.root) {
+            for (const [_path, node] of nmap) {
+                const cl = node.changelist
+                if (!clMap.has(cl)) {
+                    const desc = descriptions.get(cl) || ''
+                    clMap.set(cl, new changelistNode(cl, desc))
+                }
+                clMap.get(cl)!.children.push(node)
+            }
+        }
+
+        // Sort: 'default' first, then by changelist number
+        const result = Array.from(clMap.values())
+        result.sort((a, b) => {
+            if (a.changelist === 'default') return -1
+            if (b.changelist === 'default') return 1
+            return parseInt(a.changelist) - parseInt(b.changelist)
+        })
+
+        // Update description with changelist desc + file count
+        for (const cl of result) {
+            const desc = descriptions.get(cl.changelist) || ''
+            if (desc) {
+                cl.description = `${desc} (${cl.children.length} file(s))`
+            } else {
+                cl.description = `${cl.children.length} file(s)`
+            }
+        }
+
+        return result
+    }
+
     get_all(): filenode[] {
         return [...this.root.get(eupdate_type.modify)!.values(),
              ...this.root.get(eupdate_type.add)!.values(),
@@ -80,10 +142,15 @@ export class filectl {
         return path.slice(pos+1)
     }
 
-    add_filenode(path:string, update_type:eupdate_type, oldpath:string = ""): void {
+    add_filenode(path:string, update_type:eupdate_type, oldpath:string = "", changelist:string = "default"): void {
         const filename = this._filename(path)
 
-        if (this.root.get(update_type)!.has(path)) return;
+        if (this.root.get(update_type)!.has(path)) {
+            // Update changelist if file already exists
+            const existing = this.root.get(update_type)!.get(path)!
+            existing.changelist = changelist
+            return
+        }
 
         let newnode:filenode|undefined
         this.root.forEach((value, key)=>{
@@ -94,17 +161,18 @@ export class filectl {
         })
 
         if(newnode === undefined) {
-            newnode = new filenode(filename, path, update_type, vscode.TreeItemCollapsibleState.None)
+            newnode = new filenode(filename, path, update_type, vscode.TreeItemCollapsibleState.None, changelist)
         }
         else {
             newnode.update_type = update_type
+            newnode.changelist = changelist
         }
         
         this.root.get(update_type)!.set(path, newnode)
         this.path_type_old.set(path, update_type)
     }
 
-    add_batch_filenode(file_infos: Map<string, eupdate_type>):string[] {
+    add_batch_filenode(file_infos: Map<string, OpenedFileInfo>):string[] {
         if(this.path_type_A.size == 0) {
             this.path_type_old = this.path_type_B
             this.path_type_new = this.path_type_A
@@ -115,12 +183,18 @@ export class filectl {
         
         let changed_files: string[] = new Array
 
-        file_infos.forEach((update_type, file) => {
-            if (!this.path_type_old.has(file) || this.path_type_old.get(file) != update_type) {
+        file_infos.forEach((info, file) => {
+            if (!this.path_type_old.has(file) || this.path_type_old.get(file) != info.update_type) {
                 changed_files.push(file)
-                this.add_filenode(file, update_type)
+                this.add_filenode(file, info.update_type, "", info.changelist)
+            } else {
+                // Even if type hasn't changed, update changelist
+                const existing = this.get_filenod(file)
+                if (existing) {
+                    existing.changelist = info.changelist
+                }
             }
-            this.path_type_new.set(file, update_type)
+            this.path_type_new.set(file, info.update_type)
             this.path_type_old.delete(file)
         })
 

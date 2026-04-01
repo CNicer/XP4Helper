@@ -6,7 +6,7 @@ import * as filectl from './filectl/filectl';
 import * as changeEvent from './event';
 import { DecorationsProvider } from './decorations'
 import { xp4LogDebug, setLogLevel, xp4Log } from './output/output'
-import { showCommitInfoInline } from './linectl/line';
+import { showCommitInfoInline, clearLineBlameDecoration } from './linectl/line';
 
 const validFileType:Set<string> = new Set(["sh", "lua", "c", "cpp", "h", "hpp", "json", "ym", "yaml", "py", "proto", "html", "xml", "js"])
 
@@ -15,11 +15,22 @@ function checkFileValid(path:string):boolean {
 }
 
 let lastLineNumber = 0
+let lastFilePath = ''
 
 function updateLogLevel() {
 	const p4_configuration = vscode.workspace.getConfiguration('XP4Helper')
 	let log_level = String(p4_configuration.get('LogLevel'))
 	setLogLevel(log_level)
+}
+
+// Track last descriptions to detect changes
+let lastDescriptionsJson = ''
+
+function descriptionsChanged(descriptions: Map<string, string>): boolean {
+	const json = JSON.stringify(Array.from(descriptions.entries()).sort())
+	if (json === lastDescriptionsJson) return false
+	lastDescriptionsJson = json
+	return true
 }
 
 // This method is called when your extension is activated
@@ -41,7 +52,6 @@ export function activate(context: vscode.ExtensionContext) {
 	let filectler = new filectl.filectl
 
 	let p4helperins = new p4helper.p4helper(filectler)
-	afterP4Init(p4helperins, filectler)
 
 	// Register tree data provider
 	let treeDataProvider = new filetree(filectler)
@@ -56,8 +66,50 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerFileDecorationProvider(decorationProvider)
 	)
 
+	// Init after providers are ready
+	afterP4Init(p4helperins, filectler, treeDataProvider, decorationProvider)
+
 	// regist commands
 	context.subscriptions.concat(treeItemCommand(p4helperins, filectler, treeDataProvider, decorationProvider))
+
+	// Line blame: show last commit author and date at cursor line
+	let lineBlameEnabled = vscode.workspace.getConfiguration('XP4Helper').get('ShowLineBlame', false)
+	let lineBlameDisposable: vscode.Disposable | undefined
+
+	function registerLineBlame() {
+		lineBlameDisposable = vscode.window.onDidChangeTextEditorSelection(async (e) => {
+			const editor = e.textEditor;
+			const lineNumber = editor.selection.active.line;
+			const filePath = editor.document.uri.fsPath;
+
+			let start = Date.now()
+
+			if (lineNumber == lastLineNumber && filePath == lastFilePath) return;
+			if (!checkFileValid(filePath)) return;
+			
+			showCommitInfoInline(p4helperins, editor, lineNumber, filePath)
+			lastLineNumber = lineNumber
+			lastFilePath = filePath
+
+			xp4LogDebug("Total cost=%dms", Date.now() - start)
+		})
+		context.subscriptions.push(lineBlameDisposable)
+	}
+
+	function unregisterLineBlame() {
+		if (lineBlameDisposable) {
+			lineBlameDisposable.dispose()
+			lineBlameDisposable = undefined
+		}
+		// Clear existing decorations
+		clearLineBlameDecoration()
+		lastLineNumber = -1
+		lastFilePath = ''
+	}
+
+	if (lineBlameEnabled) {
+		registerLineBlame()
+	}
 
 	// p4 configuration change event
 	let configurationChangeE = vscode.workspace.onDidChangeConfiguration((event)=> {
@@ -68,27 +120,19 @@ export function activate(context: vscode.ExtensionContext) {
 		} else if (event.affectsConfiguration("XP4Helper.LogLevel")) {
 			updateLogLevel()
 		}
+		if (event.affectsConfiguration("XP4Helper.ShowLineBlame")) {
+			lineBlameEnabled = vscode.workspace.getConfiguration('XP4Helper').get('ShowLineBlame', false)
+			if (lineBlameEnabled) {
+				registerLineBlame()
+			} else {
+				unregisterLineBlame()
+			}
+		}
 	})
 
 	let workspaceChangeE = vscode.workspace.onDidChangeWorkspaceFolders((event) => {
 		p4helperins.init_p4_env()
 	})
-
-	// vscode.window.onDidChangeTextEditorSelection(async (e) => {
-	// 	const editor = e.textEditor;
-    //     const lineNumber = editor.selection.active.line;
-	// 	const filePath = editor.document.uri.fsPath;
-
-	// 	let start = Date.now()
-
-	// 	if (lineNumber == lastLineNumber) return;
-	// 	if (!checkFileValid(filePath)) return;
-		
-	// 	showCommitInfoInline(p4helperins, editor, lineNumber, filePath)
-	// 	lastLineNumber = lineNumber
-
-	// 	xp4LogDebug("Total cost=%dms", Date.now() - start)
-	// })
 
 	context.subscriptions.concat(fileChangeEvent(p4helperins, filectler, treeDataProvider, decorationProvider))
 	
@@ -96,33 +140,51 @@ export function activate(context: vscode.ExtensionContext) {
 
 	updateLogLevel()
 
-	const intervalId = setInterval(() => {
-		intervalRefresh(p4helperins, filectler, decorationProvider, treeDataProvider)
+	// Prevent overlapping interval refreshes
+	let isRefreshing = false
+	const intervalId = setInterval(async () => {
+		if (isRefreshing) return
+		isRefreshing = true
+		try {
+			await intervalRefresh(p4helperins, filectler, decorationProvider, treeDataProvider)
+		} finally {
+			isRefreshing = false
+		}
 	}, 5000)
 }
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
 
-function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider, treeDataProvider:filetree) {
+async function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider, treeDataProvider:filetree) {
 	if (!p4helperins.is_active) return
-	let allFiles = filectler.add_batch_filenode(p4helperins.get_opened())
-	if (allFiles.length == 0) return
-	console.log("Has change")
-	decorationProvider.refresh(allFiles)
-	treeDataProvider.refresh()
+	const {files, descriptions} = await p4helperins.get_opened()
+	let allFiles = filectler.add_batch_filenode(files)
+	if (allFiles.length > 0) {
+		console.log("Has change")
+		decorationProvider.refresh(allFiles)
+	}
+	// Only refresh tree view when descriptions or files actually changed
+	if (allFiles.length > 0 || descriptionsChanged(descriptions)) {
+		treeDataProvider.refresh(descriptions)
+	}
 }
-
-function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.filectl) {
+async function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.filectl, treeDataProvider?: filetree, decorationProvider?: DecorationsProvider) {
 	if (!p4helperins.is_active) return
-	filectler.add_batch_filenode(p4helperins.get_opened())
-	// for(let [file, update_type] of p4helperins.get_opened()) {
-	// 	filectler.add_filenode(file, update_type)
-	// }
+	const {files, descriptions} = await p4helperins.get_opened()
+	const changedFiles = filectler.add_batch_filenode(files)
+	if (treeDataProvider) {
+		treeDataProvider.refresh(descriptions)
+	}
+	// Refresh decorations for all opened files on init
+	if (decorationProvider && files.size > 0) {
+		const allPaths = Array.from(files.keys())
+		decorationProvider.refresh(allPaths)
+	}
 }
 
 function treeItemCommand(p4helperins: p4helper.p4helper, filectler:filectl.filectl, treeDataProvider:filetree, decorationProvider:DecorationsProvider):vscode.Disposable[] {
-	let openFileCommand =  vscode.commands.registerCommand('xp4helper.openfile', (filenode)=>{
+	let openFileCommand =  vscode.commands.registerCommand('xp4helper.openfile', async (filenode)=>{
 		const filepath = filenode.filepath
 		if(!checkFileValid(filepath)) return
 		switch(filenode.update_type) {
@@ -130,7 +192,7 @@ function treeItemCommand(p4helperins: p4helper.p4helper, filectler:filectl.filec
 				vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filepath))
 			}break;
 			case filectl.eupdate_type.modify: {
-				const headFilePath = p4helperins.get_head(filepath)
+				const headFilePath = await p4helperins.get_head(filepath)
 				if(headFilePath != "") {
 					vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(headFilePath), vscode.Uri.file(filepath))
 				}
@@ -139,23 +201,23 @@ function treeItemCommand(p4helperins: p4helper.p4helper, filectler:filectl.filec
 				}
 			}break;
 			case filectl.eupdate_type.delete: {
-				const headFilePath = p4helperins.get_head(filepath)
+				const headFilePath = await p4helperins.get_head(filepath)
 				vscode.commands.executeCommand('vscode.open', vscode.Uri.file(headFilePath))
 			}break;
 		}
 	})
 
-	let refreshCommand = vscode.commands.registerCommand('xp4helper.refresh', ()=>{
+	let refreshCommand = vscode.commands.registerCommand('xp4helper.refresh', async ()=>{
 		treeDataProvider.refresh()
 		// init后需要删除
 		filectler.del_all()
-		afterP4Init(p4helperins, filectler)
+		await afterP4Init(p4helperins, filectler, treeDataProvider, decorationProvider)
 	})
 
-	let revertCommand = vscode.commands.registerCommand('xp4helper.revert', (filenode)=>{
+	let revertCommand = vscode.commands.registerCommand('xp4helper.revert', async (filenode)=>{
 		const filepath = filenode.filepath
 		filectler.del_filenode(filepath, filenode.update_type)
-		p4helperins.force_revert(filenode.filepath)
+		await p4helperins.force_revert(filenode.filepath)
 		treeDataProvider.refresh()
 		decorationProvider.refresh([filepath])
 	})
@@ -170,7 +232,7 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 	* add
 	* rename
 	*/
-	let fileDeleteE = vscode.workspace.onDidDeleteFiles((event)=>{
+	let fileDeleteE = vscode.workspace.onDidDeleteFiles(async (event)=>{
 		let hasChange:boolean = false
 		let pathList:string[] = new Array()
 		for(let file of event.files) {
@@ -178,7 +240,7 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 			if(!checkFileValid(fspath)) continue
 			const path = p4helper.disk_to_upper(fspath).replaceAll('/', '\\')
 			let oldFileNode = filectler.get_filenod(path)
-			if(changeEvent.on_del(oldFileNode, p4helperins, filectler, path)) {
+			if(await changeEvent.on_del(oldFileNode, p4helperins, filectler, path)) {
 				hasChange = true
 				pathList.push(path)
 			}
@@ -188,19 +250,21 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 			decorationProvider.refresh(pathList)
 		}
 	})
-	let fileModifyE = vscode.workspace.onDidSaveTextDocument((event)=>{
+	let fileModifyE = vscode.workspace.onDidSaveTextDocument(async (event)=>{
 		const fspath = event.uri.fsPath
 		xp4LogDebug("ModifyE %s", fspath)
 		if(!checkFileValid(fspath)) return
 		const path = p4helper.disk_to_upper(fspath).replaceAll('/', '\\')
+		// Invalidate annotate cache on file save
+		p4helperins.invalidateAnnotateCache(path)
 		let oldFileNode = filectler.get_filenod(path)
-		if(changeEvent.on_modify(oldFileNode, p4helperins, filectler, path)) {
+		if(await changeEvent.on_modify(oldFileNode, p4helperins, filectler, path)) {
 			treeDataProvider.refresh()
 			decorationProvider.refresh([path])
 			xp4LogDebug("OnModify success %s", fspath)
 		}
 	})
-	let fileAddE = vscode.workspace.onDidCreateFiles((event)=>{
+	let fileAddE = vscode.workspace.onDidCreateFiles(async (event)=>{
 		let hasChange:boolean = false
 		let pathList:string[] = new Array()
 		for(let file of event.files) {
@@ -209,7 +273,7 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 			if(!checkFileValid(fspath)) continue
 			const path = p4helper.disk_to_upper(fspath).replaceAll('/', '\\')
 			let oldFileNode = filectler.get_filenod(path)
-			if(changeEvent.on_add(oldFileNode, p4helperins, filectler, path)) {
+			if(await changeEvent.on_add(oldFileNode, p4helperins, filectler, path)) {
 				hasChange = true
 				pathList.push(path)
 			}
@@ -219,7 +283,7 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 			decorationProvider.refresh(pathList)
 		}
 	})
-	let fileRenameE = vscode.workspace.onDidRenameFiles((event)=>{
+	let fileRenameE = vscode.workspace.onDidRenameFiles(async (event)=>{
 		let hasChange:boolean = false
 		let pathList:string[] = new Array()
 		for(let file of event.files) {
@@ -233,7 +297,7 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 			if(!isNewValid) {
 				if(oldFileNode !== undefined) {
 					filectler.del_filenode(oldPath, oldFileNode.update_type)
-					p4helperins.force_revert(oldPath)
+					await p4helperins.force_revert(oldPath)
 				}
 				continue
 			}
@@ -241,7 +305,7 @@ function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filect
 				// Not be dealt with for now
 				continue
 			}
-			if(changeEvent.on_rename(oldFileNode, p4helperins, filectler, oldPath, newPath)) {
+			if(await changeEvent.on_rename(oldFileNode, p4helperins, filectler, oldPath, newPath)) {
 				hasChange = true
 				pathList.push(oldPath, newPath)
 			}

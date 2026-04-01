@@ -3,11 +3,11 @@ import { p4helper, echeck_res_type } from "./p4v/p4helper";
 import { xp4LogDebug } from "./output/output";
 import * as fs from 'fs'
 
-function on_old_modify(old_filenode:filenode, p4helperins:p4helper, filectler:filectl):boolean {
+async function on_old_modify(old_filenode:filenode, p4helperins:p4helper, filectler:filectl):Promise<boolean> {
     const filepath = old_filenode.filepath
     switch(old_filenode.update_type) {
         case eupdate_type.modify: {
-            if (p4helperins.try_revert(filepath)) {
+            if (await p4helperins.try_revert(filepath)) {
                 xp4LogDebug("file revert")
                 filectler.del_filenode(filepath, old_filenode.update_type)
                 return true
@@ -20,10 +20,10 @@ function on_old_modify(old_filenode:filenode, p4helperins:p4helper, filectler:fi
         case eupdate_type.delete: {
             const temp_path = filepath + Math.random()
             fs.copyFileSync(filepath, temp_path)
-            p4helperins.force_revert(filepath)
+            await p4helperins.force_revert(filepath)
             fs.rmSync(filepath)
             fs.renameSync(temp_path, filepath)
-            if(p4helperins.on_modify(filepath) == echeck_res_type.success) {
+            if(await p4helperins.on_modify(filepath) == echeck_res_type.success) {
                 filectler.mv_filenode(filepath, old_filenode.update_type, eupdate_type.modify)
             } else {
                 filectler.del_filenode(filepath, old_filenode.update_type)
@@ -35,7 +35,7 @@ function on_old_modify(old_filenode:filenode, p4helperins:p4helper, filectler:fi
     return false
 }
 
-function on_old_add(old_filenode:filenode, p4helperins:p4helper, filectler:filectl):boolean {
+async function on_old_add(old_filenode:filenode, p4helperins:p4helper, filectler:filectl):Promise<boolean> {
     const filepath = old_filenode.filepath
     switch(old_filenode.update_type) {
         case eupdate_type.modify: {
@@ -45,7 +45,7 @@ function on_old_add(old_filenode:filenode, p4helperins:p4helper, filectler:filec
             // nothing todo
         }break;
         case eupdate_type.delete: {
-            p4helperins.force_revert(filepath)
+            await p4helperins.force_revert(filepath)
             filectler.del_filenode(filepath, old_filenode.update_type)
             return true
         }break;
@@ -54,16 +54,16 @@ function on_old_add(old_filenode:filenode, p4helperins:p4helper, filectler:filec
     return false
 }
 
-function on_old_del(old_filenode:filenode, p4helperins:p4helper, filectler:filectl):boolean {
+async function on_old_del(old_filenode:filenode, p4helperins:p4helper, filectler:filectl):Promise<boolean> {
     const filepath = old_filenode.filepath
     switch(old_filenode.update_type) {
         case eupdate_type.modify: {
             filectler.mv_filenode(filepath, old_filenode.update_type, eupdate_type.delete)
-            return p4helperins.on_del(filepath) == echeck_res_type.success
+            return await p4helperins.on_del(filepath) == echeck_res_type.success
         }break;
         case eupdate_type.add: {
             filectler.del_filenode(filepath, old_filenode.update_type)
-            p4helperins.force_revert(filepath)
+            await p4helperins.force_revert(filepath)
             return true
         }break;
         case eupdate_type.delete: {
@@ -74,16 +74,16 @@ function on_old_del(old_filenode:filenode, p4helperins:p4helper, filectler:filec
     return false
 }
 
-function on_old_rename(old_filenode:filenode, p4helperins:p4helper, filectler:filectl, new_path:string):boolean {
+async function on_old_rename(old_filenode:filenode, p4helperins:p4helper, filectler:filectl, new_path:string):Promise<boolean> {
     const filepath = old_filenode.filepath
     switch(old_filenode.update_type) {
         case eupdate_type.modify: {
             filectler.mv_filenode(filepath, old_filenode.update_type, eupdate_type.rename)
-            return p4helperins.on_rename(filepath, new_path) == echeck_res_type.success
+            return await p4helperins.on_rename(filepath, new_path) == echeck_res_type.success
         }break;
         case eupdate_type.add: {
             filectler.mv_filenode(filepath, old_filenode.update_type, eupdate_type.rename)
-            return p4helperins.on_rename(filepath, new_path) == echeck_res_type.success
+            return await p4helperins.on_rename(filepath, new_path) == echeck_res_type.success
         }break;
         case eupdate_type.delete: {
             // nothing todo
@@ -106,39 +106,39 @@ function p4action(check_res:echeck_res_type, filectler:filectl, path:string, upd
     }
 }
 
-export function on_modify(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, path:string):boolean {
+export async function on_modify(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, path:string):Promise<boolean> {
     if (old_filenode !== undefined) {
         xp4LogDebug("OldFilenode exists %s", path)
-        return on_old_modify(old_filenode, p4helperins, filectler)
+        return await on_old_modify(old_filenode, p4helperins, filectler)
     }
 
-    return p4action(p4helperins.on_modify(path), filectler, path, eupdate_type.modify) !== undefined
+    return p4action(await p4helperins.on_modify(path), filectler, path, eupdate_type.modify) !== undefined
 }
 
-export function on_add(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, path:string):boolean {
+export async function on_add(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, path:string):Promise<boolean> {
     if(old_filenode !== undefined) {
-        return on_old_add(old_filenode, p4helperins, filectler)
+        return await on_old_add(old_filenode, p4helperins, filectler)
     }
 
-    return p4action(p4helperins.on_add(path), filectler, path, eupdate_type.add) !== undefined
+    return p4action(await p4helperins.on_add(path), filectler, path, eupdate_type.add) !== undefined
 }
 
-export function on_del(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, path:string):boolean {
+export async function on_del(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, path:string):Promise<boolean> {
     if(old_filenode !== undefined) {
-        return on_old_del(old_filenode, p4helperins, filectler)
+        return await on_old_del(old_filenode, p4helperins, filectler)
     }
 
-    return p4action(p4helperins.on_del(path), filectler, path, eupdate_type.delete) !== undefined
+    return p4action(await p4helperins.on_del(path), filectler, path, eupdate_type.delete) !== undefined
 }
 
-export function on_rename(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, old_path:string, new_path:string):boolean {
+export async function on_rename(old_filenode:filenode|undefined, p4helperins:p4helper, filectler:filectl, old_path:string, new_path:string):Promise<boolean> {
     if(old_filenode !== undefined) {
-        return on_old_rename(old_filenode, p4helperins, filectler, new_path)
+        return await on_old_rename(old_filenode, p4helperins, filectler, new_path)
     }
 
-    if(p4helperins.on_del(old_path)!=echeck_res_type.success) return false
+    if(await p4helperins.on_del(old_path)!=echeck_res_type.success) return false
 
-    if(p4helperins.on_add(new_path)!=echeck_res_type.success) return false
+    if(await p4helperins.on_add(new_path)!=echeck_res_type.success) return false
 
     filectler.add_filenode(old_path, eupdate_type.delete)
     filectler.add_filenode(new_path, eupdate_type.add)

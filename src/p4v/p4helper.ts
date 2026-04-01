@@ -21,9 +21,22 @@ export enum echeck_res_type {
     success,
 }
 
+// Sync version: only used during init_p4_env (startup, blocking is acceptable)
 function exec_cmd(cmd:string):string[] {
     const result = spawnSync(cmd, [], {shell:true, encoding:'utf-8'})
     return [result.stdout.replaceAll('\r\n', '\n'), result.stderr.replaceAll('\r\n', '\n')]
+}
+
+// Async version: used for all runtime p4 commands to avoid blocking the main thread
+function exec_cmd_async(cmd:string):Promise<string[]> {
+    return new Promise((resolve) => {
+        exec(cmd, {encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024}, (error, stdout, stderr) => {
+            resolve([
+                (stdout || '').replaceAll('\r\n', '\n'),
+                (stderr || '').replaceAll('\r\n', '\n')
+            ])
+        })
+    })
 }
 
 // change lower disk case to upper: g:/ -> G:/
@@ -50,6 +63,15 @@ export function get_postfix(path:string):string {
     return path.substring(pos+1)
 }
 
+// Annotate cache entry
+interface AnnotateCacheEntry {
+    // Map from changelist number to {author, date}
+    changelistInfo: Map<string, {author: string, date: string}>
+    // Array of changelist numbers per line (0-based index)
+    lineChangelists: string[]
+    timestamp: number
+}
+
 export class p4helper {
     p4port: string = ""
     p4user: string = ""
@@ -65,9 +87,24 @@ export class p4helper {
 
     filectler: filectl.filectl
 
+    // Annotate cache: keyed by file path, caches annotate results
+    private annotateCache: Map<string, AnnotateCacheEntry> = new Map()
+    private static ANNOTATE_CACHE_TTL = 60000 // 60 seconds TTL
+
     constructor(filectler: filectl.filectl) {
         this.filectler = filectler
         this.init_p4_env()
+    }
+
+    // Invalidate annotate cache for a specific file (call on file save)
+    invalidateAnnotateCache(path: string) {
+        const normalized = path.replaceAll('\\', '/')
+        this.annotateCache.delete(normalized)
+    }
+
+    // Clear all annotate cache
+    clearAnnotateCache() {
+        this.annotateCache.clear()
     }
 
     init_p4_env():void {
@@ -221,133 +258,154 @@ export class p4helper {
         this.is_active = true
     }
 
-    isinstream_dir(path:string): boolean {
+    async isinstream_dir(path:string): Promise<boolean> {
         if (path.includes(this.p4stream)) return true
         if (!path.includes(this.localpath)) return false;
         path = path.replace(this.localpath, this.p4stream)
-        const res = exec_cmd('p4 dirs ' + path)
+        const res = await exec_cmd_async('p4 dirs ' + path)
         if (res[1] != "") return false
         if (res[0].includes('no such file')) return false
         return true
     }
 
-    isinstream_file(path:string): boolean {
+    async isinstream_file(path:string): Promise<boolean> {
         if (!path.includes(this.localpath)) return false;
         path = path.replace(this.localpath, this.p4stream)
-        const res = exec_cmd('p4 filelog -m 1 ' + path)
+        const res = await exec_cmd_async('p4 filelog -m 1 ' + path)
         if (res[1] != "") return false
         if (res[0].includes('no such file')) return false
         return true
     }
     
-    only_open(path:string):echeck_res_type {
+    async only_open(path:string): Promise<echeck_res_type> {
         if(!this.is_active) return echeck_res_type.not_active
 
         path = disk_to_upper(path).replaceAll('\\', '/')
-        if(!this.isinstream_dir(get_pre_dir(path))) return echeck_res_type.not_in_stream
-        if(!this.isinstream_file(path)) return echeck_res_type.not_in_stream
+        if(!await this.isinstream_dir(get_pre_dir(path))) return echeck_res_type.not_in_stream
+        if(!await this.isinstream_file(path)) return echeck_res_type.not_in_stream
 
-        let res = exec_cmd('p4 open ' + path)
+        let res = await exec_cmd_async('p4 open ' + path)
         if (!res[0].includes('opened for edit')) return echeck_res_type.check_conflict
 
         return echeck_res_type.success
     }
 
-    on_modify(path:string): echeck_res_type {
+    async on_modify(path:string): Promise<echeck_res_type> {
         if(!this.is_active) return echeck_res_type.not_active
 
         path = disk_to_upper(path).replaceAll('\\', '/')
-        if (!this.isinstream_dir(get_pre_dir(path))) {
-            // console.log("Path=%s file not in disk", path)
+        if (!await this.isinstream_dir(get_pre_dir(path))) {
             xp4LogDebug("Path=%s file not in dist", path)
             return echeck_res_type.not_in_stream
         }
-        if (!this.isinstream_file(path)) {
-            // console.log("Path=%s file not in stream", path)
+        if (!await this.isinstream_file(path)) {
             xp4LogDebug("Path=%s file not in stream", path)
             return echeck_res_type.not_in_stream
         }
 
-        let res = exec_cmd('p4 open ' + path)
+        let res = await exec_cmd_async('p4 open ' + path)
         if (!res[0].includes('opened for edit')) {
-            // console.log("Path=%s edit failed", path)
             xp4LogDebug("Path=%s edit failed res=%s", path, res[0])
             return echeck_res_type.check_conflict
         }
         
-        res = exec_cmd('p4 revert -a ' + path)
+        res = await exec_cmd_async('p4 revert -a ' + path)
         if (res[0].includes('reverted')) {
-            // console.log("Path=%s nothing change", path)
             xp4LogDebug("Path=%s nothing change", path)
             return echeck_res_type.nothing_change
         } 
 
-        // console.log("Path=%s check success", path)
         xp4LogDebug("Path=%s check success", path)
 
         return echeck_res_type.success
     }
 
-    on_add(path:string): echeck_res_type {
+    async on_add(path:string): Promise<echeck_res_type> {
         if(!this.is_active) return echeck_res_type.not_active
 
         path = disk_to_upper(path).replaceAll('\\', '/')
-        if(!this.isinstream_dir(get_pre_dir(path))) return echeck_res_type.not_in_stream
+        if(!await this.isinstream_dir(get_pre_dir(path))) return echeck_res_type.not_in_stream
 
-        let res = exec_cmd('p4 add ' + path)
+        let res = await exec_cmd_async('p4 add ' + path)
         if (!res[0].includes('opened for add')) return echeck_res_type.check_conflict
 
         return echeck_res_type.success
     }
 
-    on_del(path:string): echeck_res_type {
+    async on_del(path:string): Promise<echeck_res_type> {
         if(!this.is_active) return echeck_res_type.not_active
 
         path = disk_to_upper(path).replaceAll('\\', '/')
-        if(!this.isinstream_dir(get_pre_dir(path))) return echeck_res_type.not_in_stream
+        if(!await this.isinstream_dir(get_pre_dir(path))) return echeck_res_type.not_in_stream
 
-        let res = exec_cmd('p4 delete ' + path)
+        let res = await exec_cmd_async('p4 delete ' + path)
         if (!res[0].includes('opened for delete')) return echeck_res_type.check_conflict
 
         return echeck_res_type.success
     }
 
-    on_rename(old_path:string, new_path:string): echeck_res_type {
+    async on_rename(old_path:string, new_path:string): Promise<echeck_res_type> {
         if(!this.is_active) return echeck_res_type.not_active
 
         old_path = disk_to_upper(old_path).replaceAll('\\', '/')
         new_path = disk_to_upper(new_path).replaceAll('\\', '/')
-        if(!this.isinstream_dir(get_pre_dir(old_path)) || !this.isinstream_dir(get_pre_dir(new_path))) return echeck_res_type.not_in_stream
+        if(!await this.isinstream_dir(get_pre_dir(old_path)) || !await this.isinstream_dir(get_pre_dir(new_path))) return echeck_res_type.not_in_stream
         const old_stream_path = old_path.replace(this.localpath, this.p4stream)
         const new_stream_path = new_path.replace(this.localpath, this.p4stream)
 
-        let res = exec_cmd('p4 move ' + old_stream_path + ' ' + new_stream_path)
+        let res = await exec_cmd_async('p4 move ' + old_stream_path + ' ' + new_stream_path)
         if (!res[0].includes('moved from')) return echeck_res_type.check_conflict
 
         return echeck_res_type.success
     }
 
     // 将库上latest的文件下载到temp目录
-    get_head(path:string):string {
+    async get_head(path:string): Promise<string> {
         if(!this.is_active) return ""
         
         // todo 每次diff删除之前的temp文件
         let tempfilepath = this.tempdirpath + '\\' + "#head#" +  get_filename(path)
-        const res = exec_cmd('p4 print -o ' + tempfilepath + ' ' + path + '#head')
-        // let data = readFileSync(tempfilepath)
-        // let utf8data = iconv.decode(data, 'gbk')
-        // writeFileSync(tempfilepath, utf8data, 'utf-8')
+        const res = await exec_cmd_async('p4 print -o ' + tempfilepath + ' ' + path + '#head')
         return tempfilepath
     }
 
-    get_opened():Map<string, filectl.eupdate_type> {
-        let opened = new Map<string, filectl.eupdate_type>()
+    // Get changelist description by changelist number (async)
+    async get_changelist_desc(changelist: string): Promise<string> {
+        if (changelist === 'default') return ''
+        const res = await exec_cmd_async('p4 change -o ' + changelist)
+        if (res[1] !== '') return ''
+        const lines = res[0].split('\n')
+        let foundDesc = false
+        let desc = ''
+        for (const line of lines) {
+            if (line.startsWith('Description:')) {
+                foundDesc = true
+                continue
+            }
+            if (foundDesc) {
+                // Description ends when we hit another field (line starting without whitespace)
+                if (line.length > 0 && line[0] !== '\t' && line[0] !== ' ') {
+                    break
+                }
+                const trimmed = line.trim()
+                if (trimmed.length > 0) {
+                    desc += (desc.length > 0 ? ' ' : '') + trimmed
+                }
+            }
+        }
+        return desc
+    }
 
-        if(!this.is_active) return opened
+    async get_opened(): Promise<{files: Map<string, filectl.OpenedFileInfo>, descriptions: Map<string, string>}> {
+        let files = new Map<string, filectl.OpenedFileInfo>()
+        let descriptions = new Map<string, string>()
 
-        const res = exec_cmd('p4 opened')
-        if(res[1] != "") return opened
+        if(!this.is_active) return {files, descriptions}
 
+        const res = await exec_cmd_async('p4 opened')
+        if(res[1] != "") return {files, descriptions}
+
+        const changelistSet = new Set<string>()
         const lines = res[0].split('\n')
         for(let line of lines) {
             if (line.length < 2) continue
@@ -362,37 +420,134 @@ export class p4helper {
             } else if(change_info.includes('delete')) {
                 update_type = filectl.eupdate_type.delete
             }
-            opened.set((streampath.replace(this.p4stream, this.localpath)).replaceAll('/', '\\'), update_type!)
+
+            // Parse changelist number from output
+            // Format: #rev - action default change (type) OR #rev - action change 12345 (type)
+            let changelist = 'default'
+            const changeMatch = change_info.match(/change\s+(\d+)/)
+            if (changeMatch) {
+                changelist = changeMatch[1]
+            }
+            changelistSet.add(changelist)
+
+            files.set(
+                (streampath.replace(this.p4stream, this.localpath)).replaceAll('/', '\\'),
+                { update_type: update_type!, changelist: changelist }
+            )
         }
 
-        return opened
+        // Fetch descriptions for all numbered changelists in parallel
+        const descPromises: Promise<void>[] = []
+        for (const cl of changelistSet) {
+            if (cl !== 'default') {
+                descPromises.push(
+                    this.get_changelist_desc(cl).then(desc => {
+                        descriptions.set(cl, desc)
+                    })
+                )
+            }
+        }
+        await Promise.all(descPromises)
+
+        return {files, descriptions}
     }
 
-    try_revert(path:string):boolean {
-        const res = exec_cmd('p4 revert -a ' + path)
+    async try_revert(path:string): Promise<boolean> {
+        const res = await exec_cmd_async('p4 revert -a ' + path)
         if(res[1] != "") return false
         return res[0].includes('reverted')
     }
 
-    force_revert(path:string) {
-        exec_cmd('p4 revert ' + path)
+    async force_revert(path:string): Promise<void> {
+        await exec_cmd_async('p4 revert ' + path)
     }
 
-    get_commit_author(path: string, linenumber: number): Promise<{author:string, date: string}> {
-        return new Promise((resolve, reject) => {
-            if (!this.is_active) resolve({author: '', date: ''});
-            let author = '';
-            let date = '';
-            let start = Date.now()
-            const res = exec_cmd(`p4 changes -m 1 ${path}#${linenumber}`)
-            xp4LogDebug("Get author cost=%dms", Date.now() - start)
-            if (res == undefined || res.length == 0) resolve({ author, date })
-            const infoline = res[0]
-            const parts = infoline.split(' ')
-            if(parts.length < 6) resolve({author, date})
-            author = parts[5]
-            date = parts[3]
-            resolve({ author, date })
+    async get_commit_author(path: string, linenumber: number): Promise<{author:string, date: string}> {
+        if (!this.is_active) return {author: '', date: ''}
+        
+        let start = Date.now()
+        const normalizedPath = path.replaceAll('\\', '/')
+
+        // Check annotate cache
+        let cacheEntry = this.annotateCache.get(normalizedPath)
+        if (cacheEntry && (Date.now() - cacheEntry.timestamp) < p4helper.ANNOTATE_CACHE_TTL) {
+            // Cache hit: use cached data
+            if (linenumber >= cacheEntry.lineChangelists.length) return {author: '', date: ''}
+            const changelist = cacheEntry.lineChangelists[linenumber]
+            const info = cacheEntry.changelistInfo.get(changelist)
+            if (info) {
+                xp4LogDebug("Annotate cache hit, cost=%dms", Date.now() - start)
+                return info
+            }
+            // Changelist not yet resolved, fetch it
+            const descRes = await exec_cmd_async(`p4 describe -s ${changelist}`)
+            if (descRes[1] === '' && descRes[0] !== '') {
+                const firstLine = descRes[0].split('\n')[0]
+                const byMatch = firstLine.match(/by\s+(\S+)@\S+\s+on\s+(\S+)/)
+                if (byMatch) {
+                    const result = {author: byMatch[1], date: byMatch[2]}
+                    cacheEntry.changelistInfo.set(changelist, result)
+                    return result
+                }
+            }
+            return {author: '', date: ''}
+        }
+
+        // Cache miss: run p4 annotate
+        const streampath = normalizedPath.replace(this.localpath, this.p4stream)
+        const annotateRes = await exec_cmd_async(`p4 annotate -c "${streampath}"`)
+        xp4LogDebug("Annotate cost=%dms", Date.now() - start)
+        if (annotateRes[1] !== '' || annotateRes[0] === '') {
+            return {author: '', date: ''}
+        }
+
+        const lines = annotateRes[0].split('\n')
+        
+        // Build cache: parse all line changelists
+        const lineChangelists: string[] = []
+        const uniqueChangelists = new Set<string>()
+        for (const line of lines) {
+            const colonPos = line.indexOf(':')
+            if (colonPos === -1) {
+                lineChangelists.push('')
+                continue
+            }
+            const cl = line.substring(0, colonPos).trim()
+            lineChangelists.push(cl)
+            uniqueChangelists.add(cl)
+        }
+
+        // Fetch all unique changelist descriptions in parallel
+        const changelistInfo = new Map<string, {author: string, date: string}>()
+        const descPromises: Promise<void>[] = []
+        for (const cl of uniqueChangelists) {
+            if (cl === '') continue
+            descPromises.push(
+                exec_cmd_async(`p4 describe -s ${cl}`).then(descRes => {
+                    if (descRes[1] === '' && descRes[0] !== '') {
+                        const firstLine = descRes[0].split('\n')[0]
+                        const byMatch = firstLine.match(/by\s+(\S+)@\S+\s+on\s+(\S+)/)
+                        if (byMatch) {
+                            changelistInfo.set(cl, {author: byMatch[1], date: byMatch[2]})
+                        }
+                    }
+                })
+            )
+        }
+        await Promise.all(descPromises)
+
+        // Store in cache
+        this.annotateCache.set(normalizedPath, {
+            changelistInfo,
+            lineChangelists,
+            timestamp: Date.now()
         })
+
+        xp4LogDebug("Annotate full fetch + cache build cost=%dms", Date.now() - start)
+
+        // Return result for requested line
+        if (linenumber >= lineChangelists.length) return {author: '', date: ''}
+        const changelist = lineChangelists[linenumber]
+        return changelistInfo.get(changelist) || {author: '', date: ''}
     }
 }

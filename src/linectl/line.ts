@@ -2,37 +2,43 @@ import * as vscode from 'vscode';
 import { p4helper } from '../p4v/p4helper';
 import { xp4LogDebug } from '../output/output';
 
+// Reuse a single decoration type to avoid frequent create/dispose
 let decorationType: vscode.TextEditorDecorationType | null = null;
 
-function createDecoration() {
+function getOrCreateDecorationType(): vscode.TextEditorDecorationType {
+    if (!decorationType) {
+        decorationType = vscode.window.createTextEditorDecorationType({
+            after: {
+                color: 'rgba(255, 255, 255, 0.5)',
+                fontStyle: 'italic',
+                margin: '0 0 0 50px',
+                backgroundColor: 'rgba(0, 0, 0, 0.1)',
+            }
+        });
+    }
+    return decorationType;
+}
 
+export function clearLineBlameDecoration() {
+    if (decorationType) {
+        decorationType.dispose()
+        decorationType = null
+    }
 }
 
 function updateDecoration(editor: vscode.TextEditor, lineNumber: number, commitInfo: { author: string, date: string }) {
-    const line = editor.document.lineAt(lineNumber); // 获取指定行
-    const range = new vscode.Range(lineNumber, line.text.length, lineNumber, 0); // 获取光标所在行的范围
+    const line = editor.document.lineAt(lineNumber);
+    const range = new vscode.Range(lineNumber, line.text.length, lineNumber, 0);
     const text = `-- ${commitInfo.author} ${commitInfo.date}`;
 
-    if (decorationType) {
-        decorationType.dispose()
-    }
-
-    decorationType = vscode.window.createTextEditorDecorationType({
-        after: {
-            contentText: text,
-            color: 'rgba(255, 255, 255, 0.5)', // 半透明白色文字
-            fontStyle: 'italic', // 斜体
-            margin: '0 0 0 50px', // 左边距
-            backgroundColor: 'rgba(0, 0, 0, 0.1)', // 半透明背景
-        }
-    });
+    const decType = getOrCreateDecorationType();
     
-    // 更新装饰的内容
-    editor.setDecorations(decorationType, [{
+    // Update decoration content via renderOptions
+    editor.setDecorations(decType, [{
         range: range,
         renderOptions: {
             after: {
-                contentText: text, // 设置提交人和日期显示的文本
+                contentText: text,
             }
         }
     }]);
@@ -49,11 +55,10 @@ export async function showCommitInfoInline(p4helperins: p4helper, editor: vscode
         return;
     }
 
-    // 获取提交信息
+    // Get commit info
     try {
         const commitInfo = await p4helperins.get_commit_author(filepath, lineNumber);
-        createDecoration(); // 创建装饰
-        updateDecoration(editor, lineNumber, commitInfo); // 更新装饰
+        updateDecoration(editor, lineNumber, commitInfo);
     } catch (error) {
         xp4LogDebug(`Failed to get commit info: ${error}`);
     }
