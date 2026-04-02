@@ -6,9 +6,18 @@ import { p4helper } from '../p4v/p4helper'
 
 type TreeNode = filectl.changelistNode | filectl.filenode
 
-export class filetree implements vscode.TreeDataProvider<TreeNode>{
+const DRAG_MIME = 'application/vnd.code.tree.checkfiles'
+
+export class filetree implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode> {
     filectler: filectl.filectl
     changelist_descriptions: Map<string, string> = new Map()
+    p4helperins: p4helper | undefined
+    // Callback to trigger a full refresh after drag-drop
+    onAfterDrop: (() => Promise<void>) | undefined
+
+    // TreeDragAndDropController properties
+    readonly dropMimeTypes: readonly string[] = [DRAG_MIME]
+    readonly dragMimeTypes: readonly string[] = [DRAG_MIME]
 
     constructor(filectler:filectl.filectl) {
         this.filectler = filectler
@@ -39,6 +48,75 @@ export class filetree implements vscode.TreeDataProvider<TreeNode>{
           this.changelist_descriptions = descriptions
       }
       this._onDidChangeTreeData.fire();
+    }
+
+    // --- Drag and Drop ---
+    handleDrag(source: readonly TreeNode[], dataTransfer: vscode.DataTransfer, _token: vscode.CancellationToken): void {
+        // Only allow dragging file nodes
+        const fileNodes = source.filter((n): n is filectl.filenode => n instanceof filectl.filenode)
+        if (fileNodes.length === 0) return
+        // Serialize to JSON to survive DataTransfer serialization
+        const data = fileNodes.map(n => ({ filepath: n.filepath, filename: n.filename, changelist: n.changelist }))
+        dataTransfer.set(DRAG_MIME, new vscode.DataTransferItem(data))
+    }
+
+    async handleDrop(target: TreeNode | undefined, dataTransfer: vscode.DataTransfer, _token: vscode.CancellationToken): Promise<void> {
+        if (!this.p4helperins) {
+            vscode.window.showErrorMessage('DnD: p4helper not initialized')
+            return
+        }
+        const transferItem = dataTransfer.get(DRAG_MIME)
+        if (!transferItem) {
+            // Fallback: try to get raw value from async
+            return
+        }
+
+        let draggedNodes: {filepath: string, filename: string, changelist: string}[]
+        const raw = transferItem.value
+        if (typeof raw === 'string') {
+            // Value was serialized to string
+            try {
+                draggedNodes = JSON.parse(raw)
+            } catch {
+                vscode.window.showErrorMessage('DnD: failed to parse transfer data')
+                return
+            }
+        } else if (Array.isArray(raw)) {
+            draggedNodes = raw
+        } else {
+            vscode.window.showErrorMessage(`DnD: unexpected transfer type: ${typeof raw}`)
+            return
+        }
+
+        if (!draggedNodes || draggedNodes.length === 0) return
+
+        // Determine target changelist
+        let targetCl: string | undefined
+        if (target instanceof filectl.changelistNode) {
+            targetCl = target.changelist
+        } else if (target instanceof filectl.filenode) {
+            targetCl = target.changelist
+        }
+        if (targetCl === undefined) {
+            vscode.window.showErrorMessage('DnD: could not determine target changelist')
+            return
+        }
+
+        // Move each file to the target changelist
+        let anySuccess = false
+        for (const node of draggedNodes) {
+            if (node.changelist === targetCl) continue // Already in this changelist
+            const ok = await this.p4helperins.reopen_changelist(node.filepath, targetCl)
+            if (ok) {
+                anySuccess = true
+            } else {
+                vscode.window.showErrorMessage(`Failed to move ${node.filename} to Change ${targetCl}`)
+            }
+        }
+
+        if (anySuccess && this.onAfterDrop) {
+            await this.onAfterDrop()
+        }
     }
 }
 

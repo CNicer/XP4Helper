@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import {exec, spawnSync} from 'child_process'
+import {exec, spawn, spawnSync} from 'child_process'
 import * as filectl from '../filectl/filectl'
 import { xp4LogDebug, xp4LogError, xp4LogInfo, xp4LogWarn } from '../output/output'
 
@@ -436,18 +436,32 @@ export class p4helper {
             )
         }
 
-        // Fetch descriptions for all numbered changelists in parallel
-        const descPromises: Promise<void>[] = []
-        for (const cl of changelistSet) {
-            if (cl !== 'default') {
-                descPromises.push(
-                    this.get_changelist_desc(cl).then(desc => {
-                        descriptions.set(cl, desc)
-                    })
-                )
+        // Fetch all pending changelists (including empty ones) and descriptions in parallel
+        const [pendingCls, ...descResults] = await Promise.all([
+            this.get_pending_changelists(),
+            ...Array.from(changelistSet)
+                .filter(cl => cl !== 'default')
+                .map(cl => this.get_changelist_desc(cl).then(desc => ({cl, desc})))
+        ])
+
+        // Add descriptions from opened files' changelists
+        for (const item of descResults as {cl: string, desc: string}[]) {
+            descriptions.set(item.cl, item.desc)
+        }
+
+        // Collect empty pending changelists that need full descriptions
+        const emptyPendingCls = (pendingCls as {changelist: string, description: string}[])
+            .filter(p => p.changelist !== 'default' && !descriptions.has(p.changelist))
+
+        // Fetch full descriptions for empty pending changelists
+        if (emptyPendingCls.length > 0) {
+            const emptyDescResults = await Promise.all(
+                emptyPendingCls.map(p => this.get_changelist_desc(p.changelist).then(desc => ({cl: p.changelist, desc: desc || p.description})))
+            )
+            for (const item of emptyDescResults) {
+                descriptions.set(item.cl, item.desc)
             }
         }
-        await Promise.all(descPromises)
 
         return {files, descriptions}
     }
@@ -466,7 +480,7 @@ export class p4helper {
     async reopen_changelist(filepath: string, changelist: string): Promise<boolean> {
         if (!this.is_active) return false
         const cl = changelist === 'default' ? 'default' : changelist
-        const res = await exec_cmd_async(`p4 reopen -c ${cl} ${filepath}`)
+        const res = await exec_cmd_async(`p4 reopen -c ${cl} "${filepath}"`)
         if (res[1] !== '') {
             xp4LogError("Reopen failed: %s", res[1])
             return false
@@ -477,15 +491,38 @@ export class p4helper {
     // Create a new pending changelist, returns the changelist number
     async create_changelist(description: string): Promise<string> {
         if (!this.is_active) return ''
-        // Build change spec via stdin
-        const spec = `Change: new\nClient: ${this.p4client}\nUser: ${this.p4user}\nStatus: new\nDescription:\n\t${description.replace(/\n/g, '\n\t')}\n`
-        const res = await exec_cmd_async(`echo ${spec} | p4 change -i`)
-        if (res[1] !== '') {
-            xp4LogError("Create changelist failed: %s", res[1])
+        // Build change spec with proper line endings
+        const descIndented = description.split('\n').map(line => '\t' + line).join('\n')
+        const spec = [
+            'Change: new',
+            `Client: ${this.p4client}`,
+            `User: ${this.p4user}`,
+            'Status: new',
+            'Description:',
+            descIndented,
+            ''
+        ].join('\n')
+
+        // Use spawn and write spec to stdin directly (avoids Windows echo/pipe issues)
+        const result = await new Promise<string[]>((resolve) => {
+            const proc = spawn('p4', ['change', '-i'], { shell: true })
+            let stdout = ''
+            let stderr = ''
+            proc.stdout.on('data', (data: Buffer) => { stdout += data.toString() })
+            proc.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
+            proc.on('close', () => {
+                resolve([stdout.replace(/\r\n/g, '\n'), stderr.replace(/\r\n/g, '\n')])
+            })
+            proc.stdin.write(spec)
+            proc.stdin.end()
+        })
+
+        if (result[1] !== '') {
+            xp4LogError("Create changelist failed: %s", result[1])
             return ''
         }
         // Output: "Change 12345 created."
-        const match = res[0].match(/Change\s+(\d+)\s+created/)
+        const match = result[0].match(/Change\s+(\d+)\s+created/)
         if (match) return match[1]
         return ''
     }
@@ -557,8 +594,8 @@ export class p4helper {
         results.push({changelist: 'default', description: 'default'})
         const lines = res[0].split('\n')
         for (const line of lines) {
-            // Format: Change 12345 on 2024/01/01 by user@client *pending* 'description'
-            const match = line.match(/Change\s+(\d+)\s+on\s+\S+\s+by\s+\S+\s+\*pending\*\s*'?(.*?)'?\s*$/)
+            // Format: Change 12345 on 2024/01/01 by user@client *pending* 'description text here'
+            const match = line.match(/Change\s+(\d+)\s+on\s+\S+\s+by\s+\S+\s+\*pending\*\s*'(.*)'\s*$/)
             if (match) {
                 results.push({changelist: match[1], description: match[2] || `Change ${match[1]}`})
             }

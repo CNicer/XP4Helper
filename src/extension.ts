@@ -53,12 +53,14 @@ export function activate(context: vscode.ExtensionContext) {
 
 	let p4helperins = new p4helper.p4helper(filectler)
 
-	// Register tree data provider
+	// Register tree data provider with drag and drop support
 	let treeDataProvider = new filetree(filectler)
-	vscode.window.registerTreeDataProvider(
-		'checkfiles',
-		treeDataProvider
-	)
+	treeDataProvider.p4helperins = p4helperins
+	const checkfilesTreeView = vscode.window.createTreeView('checkfiles', {
+		treeDataProvider: treeDataProvider,
+		dragAndDropController: treeDataProvider
+	})
+	context.subscriptions.push(checkfilesTreeView)
 
 	// decoration provider
 	const decorationProvider = new DecorationsProvider(filectler);
@@ -73,6 +75,11 @@ export function activate(context: vscode.ExtensionContext) {
 	})
 	fileHistoryProvider.treeView = fileHistoryTreeView
 	context.subscriptions.push(fileHistoryTreeView)
+
+	// Wire up drag-drop refresh callback
+	treeDataProvider.onAfterDrop = async () => {
+		await intervalRefreshOnce(p4helperins, filectler, decorationProvider, treeDataProvider)
+	}
 
 	// Init after providers are ready
 	afterP4Init(p4helperins, filectler, treeDataProvider, decorationProvider)

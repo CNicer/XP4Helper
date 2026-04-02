@@ -153,6 +153,13 @@ export class filectl {
             }
         }
 
+        // Also add empty pending changelists (from descriptions but not yet in clMap)
+        for (const [cl, desc] of descriptions) {
+            if (!clMap.has(cl)) {
+                clMap.set(cl, new changelistNode(cl, desc))
+            }
+        }
+
         // Sort: 'default' first, then by changelist number
         const result = Array.from(clMap.values())
         result.sort((a, b) => {
@@ -164,10 +171,24 @@ export class filectl {
         // Update description with changelist desc + file count
         for (const cl of result) {
             const desc = descriptions.get(cl.changelist) || ''
-            if (desc) {
-                cl.description = `${desc} (${cl.children.length} file(s))`
+            const count = cl.children.length
+            const countStr = count > 0 ? `${count} file(s)` : 'empty'
+
+            // Truncate long descriptions for sidebar display
+            const maxDescLen = 40
+            const shortDesc = desc.length > maxDescLen ? desc.substring(0, maxDescLen) + '...' : desc
+
+            if (shortDesc) {
+                cl.description = count > 0 ? `${shortDesc} (${countStr})` : shortDesc
             } else {
-                cl.description = `${cl.children.length} file(s)`
+                cl.description = countStr
+            }
+
+            // Full description in tooltip (visible on hover)
+            if (desc) {
+                cl.tooltip = `${desc}\n${countStr}`
+            } else {
+                cl.tooltip = countStr
             }
         }
 
@@ -284,6 +305,8 @@ export class filectl {
         this.root.get(eupdate_type.add)!.clear()
         this.root.get(eupdate_type.delete)!.clear()
         this.root.get(eupdate_type.rename)!.clear()
+        this.path_type_A.clear()
+        this.path_type_B.clear()
     }
 
     mv_filenode(path:string, src_update_type:eupdate_type, dst_update_type:eupdate_type) {
