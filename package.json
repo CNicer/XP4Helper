@@ -2,7 +2,7 @@
   "name": "xp4helper",
   "displayName": "XP4Helper",
   "description": "Auto check file to p4",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -39,6 +39,39 @@
       {
         "command": "xp4helper.revert",
         "title": "Revert Change"
+      },
+      {
+        "command": "xp4helper.checkout",
+        "title": "P4: Checkout"
+      },
+      {
+        "command": "xp4helper.revertFile",
+        "title": "P4: Revert"
+      },
+      {
+        "command": "xp4helper.diffHead",
+        "title": "P4: Diff with Head"
+      },
+      {
+        "command": "xp4helper.moveToChangelist",
+        "title": "Move to Changelist..."
+      },
+      {
+        "command": "xp4helper.newChangelist",
+        "title": "New Changelist",
+        "icon": "$(add)"
+      },
+      {
+        "command": "xp4helper.fileHistory",
+        "title": "P4: File History"
+      },
+      {
+        "command": "xp4helper.submitChangelist",
+        "title": "Submit Changelist"
+      },
+      {
+        "command": "xp4helper.diffRevision",
+        "title": "Diff Revisions"
       }
     ],
     "configuration": {
@@ -77,7 +110,11 @@
       "checkfiles": [
         {
           "id": "checkfiles",
-          "name": "checkfiles"
+          "name": "Checked Files"
+        },
+        {
+          "id": "fileHistory",
+          "name": "File History"
         }
       ]
     },
@@ -87,12 +124,61 @@
           "command": "xp4helper.refresh",
           "when": "view == checkfiles",
           "group": "navigation"
+        },
+        {
+          "command": "xp4helper.newChangelist",
+          "when": "view == checkfiles",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "xp4helper.revert",
-          "when": "view == checkfiles"
+          "when": "view == checkfiles && viewItem == filenode"
+        },
+        {
+          "command": "xp4helper.moveToChangelist",
+          "when": "view == checkfiles && viewItem == filenode"
+        },
+        {
+          "command": "xp4helper.submitChangelist",
+          "when": "view == checkfiles && viewItem == changelist"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "xp4helper.checkout",
+          "group": "p4@1"
+        },
+        {
+          "command": "xp4helper.revertFile",
+          "group": "p4@2"
+        },
+        {
+          "command": "xp4helper.diffHead",
+          "group": "p4@3"
+        },
+        {
+          "command": "xp4helper.fileHistory",
+          "group": "p4@4"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "xp4helper.checkout",
+          "group": "p4@1"
+        },
+        {
+          "command": "xp4helper.revertFile",
+          "group": "p4@2"
+        },
+        {
+          "command": "xp4helper.diffHead",
+          "group": "p4@3"
+        },
+        {
+          "command": "xp4helper.fileHistory",
+          "group": "p4@4"
         }
       ]
     }

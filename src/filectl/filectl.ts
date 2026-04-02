@@ -47,6 +47,7 @@ export class filenode extends vscode.TreeItem{
         this.update_type = update_type
         this.changelist = changelist
 
+        this.contextValue = 'filenode'
         this.command = {
             title: '',
             command: 'xp4helper.openfile',
@@ -77,6 +78,49 @@ export class filenode extends vscode.TreeItem{
 export interface OpenedFileInfo {
     update_type: eupdate_type
     changelist: string
+}
+
+// Represents a file history entry in the file history tree view
+export class fileHistoryNode extends vscode.TreeItem {
+    revision: string
+    changelist: string
+    action: string
+    date: string
+    user: string
+    desc: string
+    filepath: string
+
+    constructor(filepath: string, revision: string, changelist: string, action: string, date: string, user: string, description: string, prevRevision: string = '') {
+        const label = `#${revision} ${action}`
+        super(label, vscode.TreeItemCollapsibleState.None)
+        this.revision = revision
+        this.changelist = changelist
+        this.action = action
+        this.date = date
+        this.user = user
+        this.desc = description
+        this.filepath = filepath
+        this.description = `${user} | ${date}`
+        this.tooltip = `Change ${changelist}: ${description}`
+        this.contextValue = 'fileHistory'
+        this.iconPath = this._getIcon(action)
+
+        // Click to diff this revision with previous revision
+        this.command = {
+            title: 'Diff Revisions',
+            command: 'xp4helper.diffRevision',
+            arguments: [this, prevRevision]
+        }
+    }
+
+    private _getIcon(action: string): vscode.ThemeIcon {
+        if (action.includes('edit')) return new vscode.ThemeIcon('edit', new vscode.ThemeColor('terminal.ansiYellow'))
+        if (action.includes('add')) return new vscode.ThemeIcon('add', new vscode.ThemeColor('terminal.ansiGreen'))
+        if (action.includes('delete')) return new vscode.ThemeIcon('trash', new vscode.ThemeColor('terminal.ansiRed'))
+        if (action.includes('integrate') || action.includes('merge')) return new vscode.ThemeIcon('git-merge', new vscode.ThemeColor('terminal.ansiBlue'))
+        if (action.includes('branch')) return new vscode.ThemeIcon('git-branch', new vscode.ThemeColor('terminal.ansiCyan'))
+        return new vscode.ThemeIcon('circle-outline')
+    }
 }
 
 type NMap = Map<string, filenode>

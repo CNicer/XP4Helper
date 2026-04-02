@@ -1,7 +1,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import * as p4helper from './p4v/p4helper';
-import {filetree} from './tree_view/mytreeview';
+import {filetree, fileHistoryTree} from './tree_view/mytreeview';
 import * as filectl from './filectl/filectl';
 import * as changeEvent from './event';
 import { DecorationsProvider } from './decorations'
@@ -66,11 +66,19 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.registerFileDecorationProvider(decorationProvider)
 	)
 
+	// Register file history tree view (use createTreeView for focus/reveal support)
+	let fileHistoryProvider = new fileHistoryTree(p4helperins)
+	const fileHistoryTreeView = vscode.window.createTreeView('fileHistory', {
+		treeDataProvider: fileHistoryProvider
+	})
+	fileHistoryProvider.treeView = fileHistoryTreeView
+	context.subscriptions.push(fileHistoryTreeView)
+
 	// Init after providers are ready
 	afterP4Init(p4helperins, filectler, treeDataProvider, decorationProvider)
 
 	// regist commands
-	context.subscriptions.concat(treeItemCommand(p4helperins, filectler, treeDataProvider, decorationProvider))
+	context.subscriptions.concat(treeItemCommand(p4helperins, filectler, treeDataProvider, decorationProvider, fileHistoryProvider))
 
 	// Line blame: show last commit author and date at cursor line
 	let lineBlameEnabled = vscode.workspace.getConfiguration('XP4Helper').get('ShowLineBlame', false)
@@ -169,6 +177,17 @@ async function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filect
 		treeDataProvider.refresh(descriptions)
 	}
 }
+// One-shot refresh helper for commands that change P4 state
+async function intervalRefreshOnce(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider, treeDataProvider: filetree) {
+	if (!p4helperins.is_active) return
+	const {files, descriptions} = await p4helperins.get_opened()
+	let allFiles = filectler.add_batch_filenode(files)
+	if (allFiles.length > 0) {
+		decorationProvider.refresh(allFiles)
+	}
+	treeDataProvider.refresh(descriptions)
+}
+
 async function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.filectl, treeDataProvider?: filetree, decorationProvider?: DecorationsProvider) {
 	if (!p4helperins.is_active) return
 	const {files, descriptions} = await p4helperins.get_opened()
@@ -183,7 +202,7 @@ async function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.fi
 	}
 }
 
-function treeItemCommand(p4helperins: p4helper.p4helper, filectler:filectl.filectl, treeDataProvider:filetree, decorationProvider:DecorationsProvider):vscode.Disposable[] {
+function treeItemCommand(p4helperins: p4helper.p4helper, filectler:filectl.filectl, treeDataProvider:filetree, decorationProvider:DecorationsProvider, fileHistoryProvider:fileHistoryTree):vscode.Disposable[] {
 	let openFileCommand =  vscode.commands.registerCommand('xp4helper.openfile', async (filenode)=>{
 		const filepath = filenode.filepath
 		if(!checkFileValid(filepath)) return
@@ -222,7 +241,170 @@ function treeItemCommand(p4helperins: p4helper.p4helper, filectler:filectl.filec
 		decorationProvider.refresh([filepath])
 	})
 
-	return [openFileCommand, refreshCommand]
+	// Feature 1: Right-click context menu - P4 Checkout current file
+	let checkoutCommand = vscode.commands.registerCommand('xp4helper.checkout', async (uri?: vscode.Uri) => {
+		const filepath = uri?.fsPath || vscode.window.activeTextEditor?.document.uri.fsPath
+		if (!filepath) {
+			vscode.window.showWarningMessage('No file selected')
+			return
+		}
+		const result = await p4helperins.checkout_file(filepath)
+		if (result.success) {
+			vscode.window.showInformationMessage(`Checked out: ${filepath.split('\\').pop()}`)
+			// Refresh tree and decorations
+			await intervalRefreshOnce(p4helperins, filectler, decorationProvider, treeDataProvider)
+		} else {
+			vscode.window.showErrorMessage(`Checkout failed: ${result.message}`)
+		}
+	})
+
+	// Feature 1: Right-click context menu - P4 Revert current file
+	let revertFileCommand = vscode.commands.registerCommand('xp4helper.revertFile', async (uri?: vscode.Uri) => {
+		const filepath = uri?.fsPath || vscode.window.activeTextEditor?.document.uri.fsPath
+		if (!filepath) {
+			vscode.window.showWarningMessage('No file selected')
+			return
+		}
+		const confirm = await vscode.window.showWarningMessage(
+			`Revert ${filepath.split('\\').pop()}?`,
+			{ modal: true }, 'Revert'
+		)
+		if (confirm !== 'Revert') return
+		const path = p4helper.disk_to_upper(filepath).replaceAll('/', '\\')
+		const node = filectler.get_filenod(path)
+		if (node) {
+			filectler.del_filenode(path, node.update_type)
+		}
+		await p4helperins.force_revert(filepath)
+		treeDataProvider.refresh()
+		decorationProvider.refresh([path])
+	})
+
+	// Feature 1: Right-click context menu - P4 Diff with Head
+	let diffHeadCommand = vscode.commands.registerCommand('xp4helper.diffHead', async (uri?: vscode.Uri) => {
+		const filepath = uri?.fsPath || vscode.window.activeTextEditor?.document.uri.fsPath
+		if (!filepath) {
+			vscode.window.showWarningMessage('No file selected')
+			return
+		}
+		const headFilePath = await p4helperins.diff_with_head(filepath)
+		if (headFilePath) {
+			vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(headFilePath), vscode.Uri.file(filepath), `Head ↔ ${filepath.split('\\').pop()}`)
+		} else {
+			vscode.window.showWarningMessage('Cannot get head revision')
+		}
+	})
+
+	// Feature 2: Move file to another changelist
+	let moveToChangelistCommand = vscode.commands.registerCommand('xp4helper.moveToChangelist', async (filenode: filectl.filenode) => {
+		if (!filenode || !filenode.filepath) return
+		const changelists = await p4helperins.get_pending_changelists()
+		const items = changelists.map(cl => ({
+			label: cl.changelist === 'default' ? 'default' : `Change ${cl.changelist}`,
+			description: cl.description,
+			changelist: cl.changelist
+		}))
+		const selected = await vscode.window.showQuickPick(items, {
+			placeHolder: 'Select target changelist'
+		})
+		if (!selected) return
+		const success = await p4helperins.reopen_changelist(filenode.filepath, selected.changelist)
+		if (success) {
+			vscode.window.showInformationMessage(`Moved to ${selected.label}`)
+			await intervalRefreshOnce(p4helperins, filectler, decorationProvider, treeDataProvider)
+		} else {
+			vscode.window.showErrorMessage('Move failed')
+		}
+	})
+
+	// Feature 3: Create new changelist
+	let newChangelistCommand = vscode.commands.registerCommand('xp4helper.newChangelist', async () => {
+		const description = await vscode.window.showInputBox({
+			prompt: 'Enter changelist description',
+			placeHolder: 'New changelist description...'
+		})
+		if (!description) return
+		const cl = await p4helperins.create_changelist(description)
+		if (cl) {
+			vscode.window.showInformationMessage(`Created changelist ${cl}`)
+			await intervalRefreshOnce(p4helperins, filectler, decorationProvider, treeDataProvider)
+		} else {
+			vscode.window.showErrorMessage('Failed to create changelist')
+		}
+	})
+
+	// Feature 5: Show file history
+	let fileHistoryCommand = vscode.commands.registerCommand('xp4helper.fileHistory', async (uri?: vscode.Uri) => {
+		const filepath = uri?.fsPath || vscode.window.activeTextEditor?.document.uri.fsPath
+		if (!filepath) {
+			vscode.window.showWarningMessage('No file selected')
+			return
+		}
+		// Focus the file history view in the sidebar first, then load data
+		await vscode.commands.executeCommand('fileHistory.focus')
+		await fileHistoryProvider.showFileHistory(filepath)
+	})
+
+	// Feature 5: Diff between two revisions when clicking a file history entry
+	let diffRevisionCommand = vscode.commands.registerCommand('xp4helper.diffRevision', async (historyNode: filectl.fileHistoryNode, prevRevision: string) => {
+		if (!historyNode) return
+		const filepath = historyNode.filepath
+		const currentRev = historyNode.revision
+
+		if (historyNode.action.includes('add') && !prevRevision) {
+			// First add: just open the file at that revision
+			const revFile = await p4helperins.get_revision(filepath, currentRev)
+			if (revFile) {
+				vscode.commands.executeCommand('vscode.open', vscode.Uri.file(revFile))
+			}
+			return
+		}
+
+		if (!prevRevision) {
+			// Oldest revision with no previous: just open it
+			const revFile = await p4helperins.get_revision(filepath, currentRev)
+			if (revFile) {
+				vscode.commands.executeCommand('vscode.open', vscode.Uri.file(revFile))
+			}
+			return
+		}
+
+		// Diff prevRevision vs currentRevision
+		const [prevFile, curFile] = await Promise.all([
+			p4helperins.get_revision(filepath, prevRevision),
+			p4helperins.get_revision(filepath, currentRev)
+		])
+		if (prevFile && curFile) {
+			const filename = filepath.split('\\').pop() || filepath
+			vscode.commands.executeCommand('vscode.diff',
+				vscode.Uri.file(prevFile),
+				vscode.Uri.file(curFile),
+				`${filename} #${prevRevision} ↔ #${currentRev}`
+			)
+		}
+	})
+
+	// Feature 6: Submit changelist
+	let submitChangelistCommand = vscode.commands.registerCommand('xp4helper.submitChangelist', async (clNode: filectl.changelistNode) => {
+		if (!clNode || !clNode.changelist) return
+		const displayName = clNode.changelist === 'default' ? 'default changelist' : `Change ${clNode.changelist}`
+		const confirm = await vscode.window.showWarningMessage(
+			`Submit ${displayName}?`,
+			{ modal: true }, 'Submit'
+		)
+		if (confirm !== 'Submit') return
+		const result = await p4helperins.submit_changelist(clNode.changelist)
+		if (result.success) {
+			vscode.window.showInformationMessage(`Submitted ${displayName} successfully`)
+			// Refresh everything
+			filectler.del_all()
+			await afterP4Init(p4helperins, filectler, treeDataProvider, decorationProvider)
+		} else {
+			vscode.window.showErrorMessage(`Submit failed: ${result.message}`)
+		}
+	})
+
+	return [openFileCommand, refreshCommand, revertCommand, checkoutCommand, revertFileCommand, diffHeadCommand, moveToChangelistCommand, newChangelistCommand, fileHistoryCommand, diffRevisionCommand, submitChangelistCommand]
 }
 
 function fileChangeEvent(p4helperins:p4helper.p4helper, filectler:filectl.filectl, treeDataProvider:filetree, decorationProvider:DecorationsProvider):vscode.Disposable[] {

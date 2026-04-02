@@ -462,6 +462,137 @@ export class p4helper {
         await exec_cmd_async('p4 revert ' + path)
     }
 
+    // Move file to another changelist: p4 reopen -c <cl> <file>
+    async reopen_changelist(filepath: string, changelist: string): Promise<boolean> {
+        if (!this.is_active) return false
+        const cl = changelist === 'default' ? 'default' : changelist
+        const res = await exec_cmd_async(`p4 reopen -c ${cl} ${filepath}`)
+        if (res[1] !== '') {
+            xp4LogError("Reopen failed: %s", res[1])
+            return false
+        }
+        return true
+    }
+
+    // Create a new pending changelist, returns the changelist number
+    async create_changelist(description: string): Promise<string> {
+        if (!this.is_active) return ''
+        // Build change spec via stdin
+        const spec = `Change: new\nClient: ${this.p4client}\nUser: ${this.p4user}\nStatus: new\nDescription:\n\t${description.replace(/\n/g, '\n\t')}\n`
+        const res = await exec_cmd_async(`echo ${spec} | p4 change -i`)
+        if (res[1] !== '') {
+            xp4LogError("Create changelist failed: %s", res[1])
+            return ''
+        }
+        // Output: "Change 12345 created."
+        const match = res[0].match(/Change\s+(\d+)\s+created/)
+        if (match) return match[1]
+        return ''
+    }
+
+    // Submit a changelist: p4 submit -c <cl>
+    async submit_changelist(changelist: string): Promise<{success: boolean, message: string}> {
+        if (!this.is_active) return {success: false, message: 'P4 not active'}
+        if (changelist === 'default') {
+            // Submit default changelist
+            const res = await exec_cmd_async('p4 submit')
+            if (res[1] !== '' && !res[0].includes('submitted')) {
+                return {success: false, message: res[1] || res[0]}
+            }
+            return {success: true, message: res[0]}
+        }
+        const res = await exec_cmd_async(`p4 submit -c ${changelist}`)
+        if (res[1] !== '' && !res[0].includes('submitted')) {
+            return {success: false, message: res[1] || res[0]}
+        }
+        return {success: true, message: res[0]}
+    }
+
+    // Get file history: p4 filelog -l -m <max> <file>
+    async get_filelog(filepath: string, maxRevisions: number = 20): Promise<{revision: string, changelist: string, action: string, date: string, user: string, description: string}[]> {
+        if (!this.is_active) return []
+        const normalizedPath = disk_to_upper(filepath).replaceAll('\\', '/')
+        const streampath = normalizedPath.replace(this.localpath, this.p4stream)
+        const res = await exec_cmd_async(`p4 filelog -l -m ${maxRevisions} "${streampath}"`)
+        if (res[1] !== '' || res[0] === '') return []
+
+        const results: {revision: string, changelist: string, action: string, date: string, user: string, description: string}[] = []
+        const lines = res[0].split('\n')
+        let i = 0
+        while (i < lines.length) {
+            const line = lines[i]
+            // Match: ... #rev change cl action on date by user@client (type)
+            const revMatch = line.match(/\.\.\.\s+#(\d+)\s+change\s+(\d+)\s+(\S+)\s+on\s+(\S+)\s+by\s+(\S+)@/)
+            if (revMatch) {
+                const revision = revMatch[1]
+                const changelist = revMatch[2]
+                const action = revMatch[3]
+                const date = revMatch[4]
+                const user = revMatch[5]
+                // Collect description lines (indented lines following the revision line)
+                let desc = ''
+                i++
+                while (i < lines.length && (lines[i].startsWith('\t') || lines[i].startsWith(' '))) {
+                    const trimmed = lines[i].trim()
+                    if (trimmed.length > 0) {
+                        desc += (desc.length > 0 ? ' ' : '') + trimmed
+                    }
+                    i++
+                }
+                results.push({revision, changelist, action, date, user, description: desc})
+            } else {
+                i++
+            }
+        }
+        return results
+    }
+
+    // Get all pending changelists for current user/client
+    async get_pending_changelists(): Promise<{changelist: string, description: string}[]> {
+        if (!this.is_active) return []
+        const res = await exec_cmd_async(`p4 changes -s pending -u ${this.p4user} -c ${this.p4client}`)
+        if (res[1] !== '' || res[0] === '') return []
+        const results: {changelist: string, description: string}[] = []
+        // Always include default
+        results.push({changelist: 'default', description: 'default'})
+        const lines = res[0].split('\n')
+        for (const line of lines) {
+            // Format: Change 12345 on 2024/01/01 by user@client *pending* 'description'
+            const match = line.match(/Change\s+(\d+)\s+on\s+\S+\s+by\s+\S+\s+\*pending\*\s*'?(.*?)'?\s*$/)
+            if (match) {
+                results.push({changelist: match[1], description: match[2] || `Change ${match[1]}`})
+            }
+        }
+        return results
+    }
+
+    // Checkout (open for edit) a file
+    async checkout_file(filepath: string): Promise<{success: boolean, message: string}> {
+        if (!this.is_active) return {success: false, message: 'P4 not active'}
+        const path = disk_to_upper(filepath).replaceAll('\\', '/')
+        const res = await exec_cmd_async('p4 edit ' + path)
+        if (res[0].includes('opened for edit')) {
+            return {success: true, message: res[0]}
+        }
+        return {success: false, message: res[1] || res[0]}
+    }
+
+    // Diff with head: get head file path for diff
+    async diff_with_head(filepath: string): Promise<string> {
+        return await this.get_head(filepath)
+    }
+
+    // Get a specific revision of a file to temp dir: p4 print -o <temp> <file>#<rev>
+    async get_revision(filepath: string, revision: string): Promise<string> {
+        if (!this.is_active) return ''
+        const normalizedPath = disk_to_upper(filepath).replaceAll('\\', '/')
+        const streampath = normalizedPath.replace(this.localpath, this.p4stream)
+        const tempfilepath = this.tempdirpath + '\\' + `#${revision}#` + get_filename(filepath)
+        const res = await exec_cmd_async(`p4 print -o ${tempfilepath} "${streampath}#${revision}"`)
+        if (res[1] !== '' && !res[0].includes(streampath)) return ''
+        return tempfilepath
+    }
+
     async get_commit_author(path: string, linenumber: number): Promise<{author:string, date: string}> {
         if (!this.is_active) return {author: '', date: ''}
         
