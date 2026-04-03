@@ -202,10 +202,14 @@ async function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.fi
 	if (treeDataProvider) {
 		treeDataProvider.refresh(descriptions)
 	}
-	// Refresh decorations for all opened files on init
-	if (decorationProvider && files.size > 0) {
-		const allPaths = Array.from(files.keys())
-		decorationProvider.refresh(allPaths)
+	// Refresh decorations: update current files and clear stale decorations
+	if (decorationProvider) {
+		if (files.size > 0) {
+			const allPaths = Array.from(files.keys())
+			decorationProvider.refresh(allPaths)
+		}
+		// Also refresh all previously marked URIs to clear decorations for submitted/reverted files
+		decorationProvider.autoRefresh()
 	}
 }
 
