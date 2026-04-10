@@ -396,14 +396,17 @@ export class p4helper {
         return desc
     }
 
-    async get_opened(): Promise<{files: Map<string, filectl.OpenedFileInfo>, descriptions: Map<string, string>}> {
+    async get_opened(): Promise<{files: Map<string, filectl.OpenedFileInfo>, descriptions: Map<string, string>, success: boolean}> {
         let files = new Map<string, filectl.OpenedFileInfo>()
         let descriptions = new Map<string, string>()
 
-        if(!this.is_active) return {files, descriptions}
+        if(!this.is_active) return {files, descriptions, success: false}
 
         const res = await exec_cmd_async('p4 opened')
-        if(res[1] != "") return {files, descriptions}
+        if(res[1] != "") {
+            xp4LogWarn("p4 opened failed: %s", res[1])
+            return {files, descriptions, success: false}
+        }
 
         const changelistSet = new Set<string>()
         const lines = res[0].split('\n')
@@ -463,7 +466,7 @@ export class p4helper {
             }
         }
 
-        return {files, descriptions}
+        return {files, descriptions, success: true}
     }
 
     async try_revert(path:string): Promise<boolean> {

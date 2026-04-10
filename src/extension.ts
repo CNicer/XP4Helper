@@ -173,7 +173,9 @@ export function deactivate() {}
 
 async function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider, treeDataProvider:filetree) {
 	if (!p4helperins.is_active) return
-	const {files, descriptions} = await p4helperins.get_opened()
+	const {files, descriptions, success} = await p4helperins.get_opened()
+	// Skip update when p4 command failed to avoid clearing all existing file marks
+	if (!success) return
 	let allFiles = filectler.add_batch_filenode(files)
 	if (allFiles.length > 0) {
 		console.log("Has change")
@@ -187,7 +189,8 @@ async function intervalRefresh(p4helperins: p4helper.p4helper, filectler: filect
 // One-shot refresh helper for commands that change P4 state
 async function intervalRefreshOnce(p4helperins: p4helper.p4helper, filectler: filectl.filectl, decorationProvider: DecorationsProvider, treeDataProvider: filetree) {
 	if (!p4helperins.is_active) return
-	const {files, descriptions} = await p4helperins.get_opened()
+	const {files, descriptions, success} = await p4helperins.get_opened()
+	if (!success) return
 	let allFiles = filectler.add_batch_filenode(files)
 	if (allFiles.length > 0) {
 		decorationProvider.refresh(allFiles)
@@ -197,7 +200,8 @@ async function intervalRefreshOnce(p4helperins: p4helper.p4helper, filectler: fi
 
 async function afterP4Init(p4helperins: p4helper.p4helper, filectler: filectl.filectl, treeDataProvider?: filetree, decorationProvider?: DecorationsProvider) {
 	if (!p4helperins.is_active) return
-	const {files, descriptions} = await p4helperins.get_opened()
+	const {files, descriptions, success} = await p4helperins.get_opened()
+	if (!success) return
 	const changedFiles = filectler.add_batch_filenode(files)
 	if (treeDataProvider) {
 		treeDataProvider.refresh(descriptions)
